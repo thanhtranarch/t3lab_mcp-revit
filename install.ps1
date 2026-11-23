@@ -34,7 +34,7 @@ param(
     [switch]$ConnectOnly,
     [switch]$Uninstall,
     [string]$Clients = "all",
-    [int[]]$Years = @(),
+    [string[]]$Years = @(),     # 2024,2026 / "2024 2026" (via -File the list arrives as one string)
     [string]$Source = "",
     [string]$Python = "",
     [switch]$Yes,
@@ -298,7 +298,8 @@ $manifest = Get-Content (Join-Path $pkg "manifest.json") -Raw | ConvertFrom-Json
 Ok "T3Lab Revit MCP $($manifest.version) ($pkg)"
 
 Step "Revit add-in"
-$targets = if ($Years.Count -gt 0) { $Years } else { Find-RevitYears }
+$wanted = @($Years | ForEach-Object { "$_" -split '[,; ]+' } | Where-Object { $_ -match '^\d{4}$' } | ForEach-Object { [int]$_ })
+$targets = if ($wanted.Count -gt 0) { $wanted } else { Find-RevitYears }
 if (-not $targets -or $targets.Count -eq 0) {
     Warn "No Revit 2022-2027 found in Program Files: installing for all of them (harmless)."
     $targets = $AllYears
