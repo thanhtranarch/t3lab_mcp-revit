@@ -1,0 +1,73 @@
+<Project>
+  <!-- Shared settings for the Revit add-in projects. One build per Revit year:
+         2022-2024  .NET Framework 4.8
+         2025-2026  .NET 8
+         2027       .NET 10
+       dotnet build -p:RevitYear=2025   (default 2024). The Revit API comes from the
+       Nice3point.Revit.Api NuGet reference packages, so no Revit install is needed to build.
+       Output: bin\Release\<year>\ -->
+  <PropertyGroup>
+    <RevitYear Condition="'$(RevitYear)' == ''">2024</RevitYear>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <DebugType>full</DebugType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(Configuration)\$(RevitYear)\</OutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)..\obj\$(MSBuildProjectName)\$(RevitYear)\</BaseIntermediateOutputPath>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Version>1.0.0</Version>
+    <Company>T3Lab</Company>
+    <Product>T3Lab Revit MCP</Product>
+    <Copyright>T3Lab</Copyright>
+    <DefineConstants>$(DefineConstants);REVIT$(RevitYear)</DefineConstants>
+    <!-- ElementId.Value (long) exists from 2024; IntegerValue is gone in 2026. -->
+    <DefineConstants Condition="$(RevitYear) &gt;= 2024">$(DefineConstants);REVIT2024_OR_GREATER</DefineConstants>
+    <DefineConstants Condition="$(RevitYear) &gt;= 2025">$(DefineConstants);REVIT2025_OR_GREATER</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(RevitYear) &lt;= 2024">
+    <TargetFramework>net48</TargetFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RevitYear)' == '2025' Or '$(RevitYear)' == '2026'">
+    <TargetFramework>net8.0-windows</TargetFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition="$(RevitYear) &gt;= 2027">
+    <TargetFramework>net10.0-windows</TargetFramework>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <RevitApiVersion Condition="'$(RevitYear)' == '2022'">2022.1.80</RevitApiVersion>
+    <RevitApiVersion Condition="'$(RevitYear)' == '2023'">2023.1.90</RevitApiVersion>
+    <RevitApiVersion Condition="'$(RevitYear)' == '2024'">2024.3.60</RevitApiVersion>
+    <RevitApiVersion Condition="'$(RevitYear)' == '2025'">2025.4.60</RevitApiVersion>
+    <RevitApiVersion Condition="'$(RevitYear)' == '2026'">2026.4.10</RevitApiVersion>
+    <RevitApiVersion Condition="'$(RevitYear)' == '2027'">2027.4.0</RevitApiVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' != 'net48'">
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Compile against Revit's API only; Revit supplies the DLLs at run time. -->
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="$(RevitApiVersion)" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="$(RevitApiVersion)" ExcludeAssets="runtime" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

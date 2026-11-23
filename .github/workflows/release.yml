@@ -1,0 +1,122 @@
+name: Release
+
+# Builds the add-in for every Revit year (2022-2024 .NET Framework 4.8, 2025-2026 .NET 8, 2027 .NET 10), tests the
+# bridge and the client registration, installs the built zip on a Windows runner, and publishes
+# dist/T3LabRevitMCP.zip, which install.ps1 downloads (releases/latest/download/T3LabRevitMCP.zip).
+on:
+  push:
+    tags: ["v*"]
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Build Revit 2022-2027
+        run: |
+          for y in 2022 2023 2024 2025 2026 2027; do
+            for p in T3LabRevit.Core T3LabRevit.Loader; do
+              dotnet build "src/$p/$p.csproj" -c Release -nologo -v q -p:RevitYear=$y -warnaserror
+            done
+          done
+      - name: Tools snapshot matches the source
+        run: python3 -I scripts/gen_tools_snapshot.py --check
+      - name: Bridge smoke test (no Revit)
+        run: python3 -I tests/smoke_bridge.py
+      - name: Client registration test
+        run: python3 -I tests/test_register.py
+      - name: Package
+        run: python3 scripts/package.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: T3LabRevitMCP
+          path: dist/T3LabRevitMCP.zip
+
+  install-on-windows:
+    # The real installer on a real Windows (no Revit there): parse, install from the built zip, check, uninstall.
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: T3LabRevitMCP
+          path: dist
+      - name: PowerShell 5.1 parses install.ps1
+        shell: powershell
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$pwd\install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Host $_ }; exit 1 }
+      - name: Install from the zip (Revit 2024 + 2026, no AI apps)
+        shell: powershell
+        run: |
+          # the files it leaves are the test, not its exit code
+          powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Source dist\T3LabRevitMCP.zip -Years 2024,2026 -NoClients -Yes
+          foreach ($y in 2024, 2026) {
+            $m = "$env:APPDATA\Autodesk\Revit\Addins\$y\T3LabRevit.addin"
+            if (-not (Test-Path $m)) { throw "missing $m" }
+            $dll = ([xml](Get-Content $m -Raw)).RevitAddIns.AddIn.Assembly
+            if (-not (Test-Path $dll)) { throw "manifest points to a missing DLL: $dll" }
+            Write-Host "Revit $y -> $dll"
+          }
+          if (-not (Test-Path "$env:APPDATA\T3LabRevitMCP\bridge.py")) { throw "bridge not deployed" }
+          exit 0
+      - name: Check mode
+        shell: powershell
+        run: |
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File "$env:APPDATA\T3LabRevitMCP\install.ps1" -Check -Clients cursor *>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch "Installed version : \d") { throw "check did not report the installed version" }
+          if ($out -notmatch '"revit_running": false') { throw "bridge --check did not run" }
+          exit 0
+      - name: Connect a client (Cursor, into a fresh profile folder)
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force "$env:USERPROFILE\.cursor" | Out-Null
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$env:APPDATA\T3LabRevitMCP\install.ps1" -ConnectOnly -Clients cursor -Yes
+          $cfg = Get-Content "$env:USERPROFILE\.cursor\mcp.json" -Raw | ConvertFrom-Json
+          if (-not $cfg.mcpServers.'t3lab-revit-mcp') { throw "cursor not registered" }
+          exit 0
+      - name: Uninstall
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$env:APPDATA\T3LabRevitMCP\install.ps1" -Uninstall -Yes -Clients cursor
+          if (Test-Path "$env:APPDATA\Autodesk\Revit\Addins\2024\T3LabRevit.addin") { throw "manifest left behind" }
+          $cfg = Get-Content "$env:USERPROFILE\.cursor\mcp.json" -Raw | ConvertFrom-Json
+          if ($cfg.mcpServers.'t3lab-revit-mcp') { throw "cursor entry left behind" }
+          exit 0
+
+  release:
+    needs: [build, install-on-windows]
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: T3LabRevitMCP
+          path: dist
+      - name: GitHub Release
+        # A merge to main publishes too; the same version replaces its assets.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' src/Directory.Build.props)
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/T3LabRevitMCP.zip install.ps1 --clobber
+          else
+            gh release create "$tag" dist/T3LabRevitMCP.zip install.ps1 --target "$GITHUB_SHA" \
+              --title "T3Lab Revit MCP $version" \
+              --notes "Revit 2022-2027. Install: irm https://raw.githubusercontent.com/${{ github.repository }}/main/install.ps1 | iex  -  or download T3LabRevitMCP.zip, extract, double-click Install.cmd."
+          fi

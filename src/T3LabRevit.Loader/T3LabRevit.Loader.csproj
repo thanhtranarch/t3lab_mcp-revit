@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The DLL Revit loads from the .addin manifest. Kept small and stable: Revit locks it
+       until restart; everything else lives in T3LabRevit.Core. -->
+  <PropertyGroup>
+    <AssemblyName>T3LabRevit.Loader</AssemblyName>
+    <RootNamespace>T3LabRevit.Loader</RootNamespace>
+  </PropertyGroup>
+</Project>
