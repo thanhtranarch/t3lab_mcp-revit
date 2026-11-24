@@ -84,7 +84,7 @@ Tuỳ chọn: `-Clients claude-desktop,claude-code` (chỉ vài app) · `-Years 
 - **Select changes**: chọn (và zoom) mọi element AI đã tạo/sửa trong model này. Thay đổi lấy từ sự kiện
   `DocumentChanged` của Revit, nên đúng cả khi tool không trả id.
 
-## Tool (34)
+## Tool (63)
 
 Đơn vị trong mọi tool: **mm, m², m³, độ**; điểm `[x, y]` / `[x, y, z]` mm; element theo id số nguyên. Mỗi thay đổi =
 **1 bước Undo**; warning của Revit được bỏ qua và báo lại (`revit_warnings`), error thì rollback.
@@ -95,8 +95,12 @@ Tuỳ chọn: `-Clients claude-desktop,claude-code` (chỉ vài app) · `-Years 
 | File | `manage_document` (open · activate · save · save_as · close · sync with central · new) |
 | Đọc | `query_elements` (lọc category / class / view / selection / level / type / tên / điều kiện parameter, `group_by`, phân trang), `get_element_info` (mọi parameter, location, bbox, host, workset, phase), `list_types`, `list_datums`, `get_selection` |
 | View | `list_views`, `set_active_view`, `create_view` (plan · ceiling · structural · 3D · drafting · duplicate), `view_graphics` (tô màu · ẩn · isolate), `set_selection` (chọn + zoom), `export_image` (AI "nhìn" view) |
-| Sửa | `set_parameter` (hàng loạt, instance hoặc type, nhận "1.2 m"), `transform_elements` (move · copy nhiều bản · rotate · mirror), `delete_elements` (`dry_run`) |
-| Tạo | `create_walls`, `create_floor` (sàn / trần, từ điểm hoặc từ room), `create_levels`, `create_grids`, `place_family_instance` (cả cửa đi/cửa sổ tự tìm tường), `create_rooms`, `load_family` |
+| **Python** | **`send_code_to_revit`**: AI tự viết code IronPython 3.4 (cú pháp Python 3, có `json`, `re`, `collections`…) với toàn bộ Revit API cho việc không có tool riêng. Mặc định chạy trong 1 transaction = 1 bước Undo; lỗi thì trả traceback và rollback |
+| Sửa | `set_parameter` (hàng loạt, instance hoặc type, nhận "1.2 m"), `transform_elements` (move · copy nhiều bản · rotate · mirror), `delete_elements` (`dry_run`), `rename_elements` (find/replace, regex, prefix/suffix, số sheet), `rehost_to_level` (đổi level giữ nguyên cao độ), `join_geometry` (join · unjoin · switch · check), `split_element` (tường, dầm, ống, duct), `edit_text_notes` (find/replace), `purge_unused` (`dry_run`) |
+| Tạo | `create_walls`, `create_floor` (sàn / trần, từ điểm hoặc từ room), `create_levels`, `create_grids`, `place_family_instance` (cả cửa đi/cửa sổ tự tìm tường), `place_line_based` (dầm, giằng), `create_rooms`, `load_family`, `tag_all_in_view` (tag mọi element chưa có tag) |
+| Quản lý model | `list_worksets` / `manage_worksets` / `set_element_workset`, `list_links` / `manage_links` (link .rvt / CAD, load · unload · reload · pin), `manage_groups`, `list_materials` / `manage_material`, `manage_revisions`, `list_project_parameters` / `create_project_parameter`, `project_storage` (lưu ghi chú trong model), `transfer_elements` (copy type / element từ model khác đang mở) |
+| View template / filter | `manage_view_templates` (list · apply · apply_once · remove · tạo từ view · chuyển từ model khác), `list_view_filters`, `create_view_filter` (rule + màu + ẩn/hiện), `manage_view` (scale, detail level, visual style, crop box, section box) |
+| Khối lượng / dữ liệu | `get_material_quantities` (m², m³ theo vật liệu), `export_room_data` (+ CSV), `schedule_roundtrip` (schedule → CSV → sửa trong Excel → nạp lại) |
 | Ghi chú | `create_annotation` (text · detail line · tag · dimension qua grid/tường) |
 | Sheet / schedule | `list_sheets`, `create_sheets`, `place_views_on_sheet`, `get_schedule_data` (+ CSV cho Excel), `create_schedule` |
 | Xuất | `export_documents` (PDF gộp/tách · DWG · IFC) |

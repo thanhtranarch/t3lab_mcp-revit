@@ -77,6 +77,10 @@ namespace T3LabRevit.Core
             ScheduleTools.Register();
             ExportTools.Register();
             ModelTools.Register();
+            ManageTools.Register();
+            TemplateTools.Register();
+            EditTools.Register();
+            CodeTools.Register();
         }
 
         public static void Add(string name, string title, ToolKind kind, string description, string schema, ToolHandler handler,

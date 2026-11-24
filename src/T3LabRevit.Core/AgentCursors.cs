@@ -271,7 +271,8 @@ namespace T3LabRevit.Core
             {
                 if (!Enabled || !Paused || SafeWhilePaused.Contains(def.Name)) return false;
                 if (def.Kind == ToolKind.Read) return def.WritesFiles && !string.IsNullOrEmpty(args.Str("csv_path"));
-                if (def.Name == "delete_elements" && args.Bool("dry_run", false)) return false;
+                if ((def.Name == "delete_elements" || def.Name == "rename_elements" || def.Name == "edit_text_notes") && args.Bool("dry_run", false)) return false;
+                if (def.Name == "purge_unused" && args.Bool("dry_run", true)) return false;
                 return true;
             }
             catch (Exception) { return def.Kind != ToolKind.Read; }
@@ -396,7 +397,10 @@ namespace T3LabRevit.Core
             ["create_grids"] = ActionKind.Create, ["place_family_instance"] = ActionKind.Create, ["create_rooms"] = ActionKind.Create,
             ["load_family"] = ActionKind.Create, ["create_view"] = ActionKind.Create, ["create_sheets"] = ActionKind.Create,
             ["place_views_on_sheet"] = ActionKind.Create, ["create_annotation"] = ActionKind.Create, ["create_schedule"] = ActionKind.Create,
-            ["delete_elements"] = ActionKind.Delete,
+            ["delete_elements"] = ActionKind.Delete, ["purge_unused"] = ActionKind.Delete,
+            ["place_line_based"] = ActionKind.Create, ["transfer_elements"] = ActionKind.Create, ["tag_all_in_view"] = ActionKind.Create,
+            ["create_view_filter"] = ActionKind.Create, ["create_project_parameter"] = ActionKind.Create,
+            ["manage_links"] = ActionKind.File, ["schedule_roundtrip"] = ActionKind.File, ["export_room_data"] = ActionKind.Read,
             ["manage_document"] = ActionKind.File, ["export_documents"] = ActionKind.File,
             ["set_active_view"] = ActionKind.View, ["set_selection"] = ActionKind.View, ["export_image"] = ActionKind.View,
         };
@@ -414,13 +418,24 @@ namespace T3LabRevit.Core
             ["place_views_on_sheet"] = "Placing views", ["create_annotation"] = "Annotating", ["create_schedule"] = "Creating a schedule",
             ["view_graphics"] = "Changing graphics", ["export_documents"] = "Exporting", ["manage_document"] = "Working on files",
             ["delete_elements"] = "Deleting", ["transform_elements"] = "Transforming",
+            ["list_worksets"] = "Reading worksets", ["manage_worksets"] = "Changing worksets", ["set_element_workset"] = "Moving to a workset",
+            ["list_links"] = "Reading links", ["manage_links"] = "Working on links", ["manage_groups"] = "Working on groups",
+            ["list_materials"] = "Reading materials", ["manage_material"] = "Changing materials", ["get_material_quantities"] = "Counting materials",
+            ["manage_revisions"] = "Working on revisions", ["project_storage"] = "Storing notes", ["manage_view_templates"] = "Working on view templates",
+            ["list_view_filters"] = "Reading view filters", ["create_view_filter"] = "Adding a view filter", ["manage_view"] = "Changing a view",
+            ["list_project_parameters"] = "Reading parameters", ["create_project_parameter"] = "Adding a parameter",
+            ["purge_unused"] = "Purging", ["join_geometry"] = "Joining geometry", ["split_element"] = "Splitting",
+            ["rehost_to_level"] = "Changing levels", ["rename_elements"] = "Renaming", ["tag_all_in_view"] = "Tagging",
+            ["edit_text_notes"] = "Editing text notes", ["place_line_based"] = "Placing beams", ["transfer_elements"] = "Copying from another model",
+            ["export_room_data"] = "Reading rooms", ["schedule_roundtrip"] = "Schedule round trip", ["send_code_to_revit"] = "Running Python",
         };
 
         static ActionKind ActionOf(ToolDef def, Args args)
         {
             if (def.Name == "transform_elements")
                 return string.Equals(args.Str("operation"), "copy", StringComparison.OrdinalIgnoreCase) || args.Bool("copy", false) ? ActionKind.Create : ActionKind.Modify;
-            if (def.Name == "delete_elements" && args.Bool("dry_run", false)) return ActionKind.Read;
+            if ((def.Name == "delete_elements" || def.Name == "rename_elements" || def.Name == "edit_text_notes") && args.Bool("dry_run", false)) return ActionKind.Read;
+            if (def.Name == "purge_unused" && args.Bool("dry_run", true)) return ActionKind.Read;
             if (Kinds.TryGetValue(def.Name, out ActionKind k)) return k;
             switch (def.Kind)
             {
@@ -453,6 +468,8 @@ namespace T3LabRevit.Core
                 case "delete_elements": return (args.Bool("dry_run", false) ? "Checking delete of " : "Deleting ") + things;
                 case "set_parameter": return "Setting parameters" + (count > 0 ? " · " + things : "");
                 case "set_active_view": return "Opening " + (args.Str("view") ?? "a view");
+                case "send_code_to_revit": return string.IsNullOrWhiteSpace(args.Str("purpose")) ? "Running Python" : Clip(args.Str("purpose").Trim(), 60);
+                case "purge_unused": return args.Bool("dry_run", true) ? "Checking unused" : "Purging unused";
             }
             if (Verbs.TryGetValue(def.Name, out string caption)) return caption;
             string human = def.Name.Replace('_', ' ');

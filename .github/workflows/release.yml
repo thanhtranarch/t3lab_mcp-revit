@@ -24,7 +24,7 @@ jobs:
       - name: Build Revit 2022-2027
         run: |
           for y in 2022 2023 2024 2025 2026 2027; do
-            for p in T3LabRevit.Core T3LabRevit.Loader; do
+            for p in T3LabRevit.Core T3LabRevit.Loader T3LabRevit.Scripting; do
               dotnet build "src/$p/$p.csproj" -c Release -nologo -v q -p:RevitYear=$y -warnaserror
             done
           done
@@ -68,8 +68,11 @@ jobs:
             $dll = ([xml](Get-Content $m -Raw)).RevitAddIns.AddIn.Assembly
             if (-not (Test-Path $dll)) { throw "manifest points to a missing DLL: $dll" }
             Write-Host "Revit $y -> $dll"
+            $py = Join-Path (Split-Path $dll) "scripting\T3LabRevit.Scripting.dll"
+            if (-not (Test-Path $py)) { throw "missing $py" }
           }
           if (-not (Test-Path "$env:APPDATA\T3LabRevitMCP\bridge.py")) { throw "bridge not deployed" }
+          if (-not (Test-Path "$env:APPDATA\T3LabRevitMCP\pylib\json\__init__.py")) { throw "pylib not deployed" }
           exit 0
       - name: Check mode
         shell: powershell

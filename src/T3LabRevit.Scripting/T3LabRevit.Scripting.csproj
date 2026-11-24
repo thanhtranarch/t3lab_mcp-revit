@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- send_code_to_revit: an IronPython 3.4 engine. Core loads this DLL by reflection from <addin>\scripting\
+       (its own AssemblyLoadContext on .NET 8+), so IronPython never meets pyRevit's or Dynamo's copy. -->
+  <PropertyGroup>
+    <AssemblyName>T3LabRevit.Scripting</AssemblyName>
+    <RootNamespace>T3LabRevit.Scripting</RootNamespace>
+    <OutputPath>bin\$(Configuration)\$(RevitYear)\scripting\</OutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="IronPython" Version="3.4.2" />
+    <PackageReference Include="IronPython.StdLib" Version="3.4.2" ExcludeAssets="all" GeneratePathProperty="true" />
+  </ItemGroup>
+</Project>

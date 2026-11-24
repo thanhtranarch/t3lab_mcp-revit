@@ -5,6 +5,8 @@
 Zip layout (one folder, so "Extract all" + Install.cmd just works):
     T3LabRevitMCP/install.ps1, Install.cmd, README.md, INSTALL_FOR_AI.md, LICENSE
     T3LabRevitMCP/addin/<2022..2027>/T3LabRevit.Loader.dll, T3LabRevit.Core.dll (+ .pdb)
+    T3LabRevitMCP/addin/<year>/scripting/   IronPython 3.4 engine for send_code_to_revit
+    T3LabRevitMCP/pylib/                    Python standard library for it (IronPython.StdLib, trimmed)
     T3LabRevitMCP/bridge/bridge.py, tools_snapshot.json
     T3LabRevitMCP/scripts/register_mcp.py
     T3LabRevitMCP/manifest.json   {"name", "version", "years": {...}, "server"}
@@ -24,6 +26,10 @@ YEARS = {
 }
 PROJECTS = ("T3LabRevit.Loader", "T3LabRevit.Core")
 TOP = "T3LabRevitMCP"
+STDLIB_VERSION = "3.4.2"
+# not needed inside Revit, or not usable there (GUI, installers, tests): 13 MB -> about 6 MB
+STDLIB_SKIP = {"ensurepip", "distutils", "pydoc_data", "lib2to3", "idlelib", "tkinter", "turtledemo", "test", "tests",
+               "unittest", "venv", "turtle.py", "site-packages", "__pycache__"}
 
 
 def version():
@@ -43,8 +49,28 @@ def entries(configuration="Release"):
                         missing.append(src)
                     continue
                 out.append((src, "{}/addin/{}/{}{}".format(TOP, year, project, ext)))
+        scripting = os.path.join(ROOT, "src", "T3LabRevit.Scripting", "bin", configuration, year, "scripting")
+        if not os.path.isfile(os.path.join(scripting, "T3LabRevit.Scripting.dll")):
+            missing.append(scripting)
+        else:
+            for name in sorted(os.listdir(scripting)):
+                path = os.path.join(scripting, name)
+                # native Mono.Unix builds for other OSes and the console runtimeconfig are not used inside Revit
+                if os.path.isfile(path) and not name.endswith(".runtimeconfig.json") and not name.endswith(".deps.json"):
+                    out.append((path, "{}/addin/{}/scripting/{}".format(TOP, year, name)))
     if missing:
         raise SystemExit("Not built:\n  " + "\n  ".join(missing))
+    stdlib = os.path.join(os.environ.get("NUGET_PACKAGES") or os.path.join(os.path.expanduser("~"), ".nuget", "packages"),
+                          "ironpython.stdlib", STDLIB_VERSION, "content", "lib")
+    if not os.path.isdir(stdlib):
+        raise SystemExit("IronPython.StdLib not restored: " + stdlib)
+    for dirpath, dirnames, filenames in os.walk(stdlib):
+        dirnames[:] = sorted(d for d in dirnames if d not in STDLIB_SKIP)
+        for name in sorted(filenames):
+            if name in STDLIB_SKIP or name.endswith(".pyc"):
+                continue
+            path = os.path.join(dirpath, name)
+            out.append((path, TOP + "/pylib/" + os.path.relpath(path, stdlib).replace(os.sep, "/")))
     for src, arc in (("bridge/t3lab_revit_bridge.py", "bridge/bridge.py"), ("bridge/tools_snapshot.json", "bridge/tools_snapshot.json"),
                      ("scripts/register_mcp.py", "scripts/register_mcp.py"), ("install.ps1", "install.ps1"),
                      ("Install.cmd", "Install.cmd"), ("README.md", "README.md"), ("INSTALL_FOR_AI.md", "INSTALL_FOR_AI.md"),

@@ -22,6 +22,7 @@
     <Copyright>T3Lab</Copyright>
     <DefineConstants>$(DefineConstants);REVIT$(RevitYear)</DefineConstants>
     <!-- ElementId.Value (long) exists from 2024; IntegerValue is gone in 2026. -->
+    <DefineConstants Condition="$(RevitYear) &gt;= 2023">$(DefineConstants);REVIT2023_OR_GREATER</DefineConstants>
     <DefineConstants Condition="$(RevitYear) &gt;= 2024">$(DefineConstants);REVIT2024_OR_GREATER</DefineConstants>
     <DefineConstants Condition="$(RevitYear) &gt;= 2025">$(DefineConstants);REVIT2025_OR_GREATER</DefineConstants>
   </PropertyGroup>

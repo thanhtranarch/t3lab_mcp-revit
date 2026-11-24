@@ -311,8 +311,9 @@ foreach ($y in $targets) {
     if (-not (Test-Path $src)) { Warn "Revit ${y}: not in this package, skipped"; continue }
     $dst = Join-Path $Data "addin\$y"
     New-Item -ItemType Directory -Force $dst | Out-Null
-    foreach ($f in Get-ChildItem $src -File) {
-        $to = Join-Path $dst $f.Name
+    foreach ($f in Get-ChildItem $src -File -Recurse) {
+        $to = Join-Path $dst $f.FullName.Substring($src.Length).TrimStart('\')
+        New-Item -ItemType Directory -Force (Split-Path $to) | Out-Null
         if ((Test-Path $to) -and ((Get-FileHash $to).Hash -eq (Get-FileHash $f.FullName).Hash)) { continue }
         try { Copy-Item $f.FullName $to -Force }
         catch {
@@ -333,6 +334,14 @@ Copy-Item (Join-Path $pkg "scripts\register_mcp.py") (Join-Path $Data "register_
 foreach ($doc in "install.ps1", "Install.cmd", "README.md", "INSTALL_FOR_AI.md") {
     $p = Join-Path $pkg $doc
     if (Test-Path $p) { Copy-Item $p (Join-Path $Data $doc) -Force }
+}
+$pylib = Join-Path $pkg "pylib"
+if (Test-Path $pylib) {
+    # Python standard library for send_code_to_revit (shared by every Revit year)
+    $dstLib = Join-Path $Data "pylib"
+    if (Test-Path $dstLib) { Remove-Item $dstLib -Recurse -Force -ErrorAction SilentlyContinue }
+    Copy-Item $pylib $dstLib -Recurse -Force
+    Ok "$dstLib (Python standard library for send_code_to_revit)"
 }
 Set-Content -Path (Join-Path $Data "version.txt") -Value $manifest.version -Encoding ASCII
 Ok "$Data\bridge.py"
