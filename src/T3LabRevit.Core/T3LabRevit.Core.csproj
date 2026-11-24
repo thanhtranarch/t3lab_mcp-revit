@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- MCP server + tools + Agent Cursors. Loaded by T3LabRevit.Loader from bytes, so it can be
+       rebuilt and reloaded (Reload button / reload_addin tool) while Revit runs. -->
+  <PropertyGroup>
+    <AssemblyName>T3LabRevit.Core</AssemblyName>
+    <RootNamespace>T3LabRevit.Core</RootNamespace>
+  </PropertyGroup>
+</Project>

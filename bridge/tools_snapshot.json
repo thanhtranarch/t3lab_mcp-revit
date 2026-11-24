@@ -1,0 +1,2641 @@
+{
+ "tools": [
+  {
+   "name": "get_revit_context",
+   "title": "Revit context",
+   "description": "Start here. Revit version, open models (active one first), and for the active model: active view, selection, levels, project info, worksharing and length units. All tools use millimetres, m2, m3 and degrees; element ids are integers.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {}
+   },
+   "annotations": {
+    "title": "Revit context",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "reload_addin",
+   "title": "Reload the add-in",
+   "description": "Load T3LabRevit.Core.dll again (after an update). The connection drops for a second; call get_revit_context after.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {}
+   },
+   "annotations": {
+    "title": "Reload the add-in",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "t3lab_narrate",
+   "title": "Show goal and steps",
+   "description": "Tell the user what you are doing in Revit: your goal and task list appear on the T3Lab Agent Cursors bar and the current task is ticked off as you go. Call it at the start of multi-step work (goal + tasks), with step=N when you move to task N, and done=true at the end. Changes nothing in the model.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "goal": {
+      "type": "string",
+      "description": "What you are doing, one short line"
+     },
+     "tasks": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "The steps you plan, short (max 8)"
+     },
+     "step": {
+      "type": "integer",
+      "description": "The task you are on now, 1-based"
+     },
+     "done": {
+      "type": "boolean",
+      "description": "All tasks are finished"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Show goal and steps",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "manage_document",
+   "title": "Open, save, switch or close a model",
+   "description": "Model files. action=open (path; detach=true detaches a central model, audit=true audits), activate (title or path of an open model: makes it the active one), save (active or title), save_as (path, overwrite), close (title of a model that is NOT active; save=true saves first), sync (synchronize with central: comment, relinquish=true), new (save_as path, optional template path; the new model becomes active).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "open",
+       "activate",
+       "save",
+       "save_as",
+       "close",
+       "sync",
+       "new"
+      ],
+      "description": "What to do"
+     },
+     "path": {
+      "type": "string",
+      "description": "File path of the .rvt for open / save_as / new"
+     },
+     "title": {
+      "type": "string",
+      "description": "Title of an open model (from get_revit_context) for activate / save / close"
+     },
+     "template": {
+      "type": "string",
+      "description": "Template .rte for new (default: the project template set in Revit)"
+     },
+     "detach": {
+      "type": "boolean",
+      "description": "open: detach from central (preserve worksets)"
+     },
+     "audit": {
+      "type": "boolean",
+      "description": "open: audit the model while opening"
+     },
+     "overwrite": {
+      "type": "boolean",
+      "description": "save_as: overwrite an existing file"
+     },
+     "save": {
+      "type": "boolean",
+      "description": "close: save before closing"
+     },
+     "comment": {
+      "type": "string",
+      "description": "sync: comment"
+     },
+     "relinquish": {
+      "type": "boolean",
+      "description": "sync: relinquish all borrowed elements and worksets (default true)"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "annotations": {
+    "title": "Open, save, switch or close a model",
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "list_views",
+   "title": "List views",
+   "description": "Views of the active model (no sheets: use list_sheets). Filter by type (FloorPlan, CeilingPlan, EngineeringPlan, AreaPlan, Section, Elevation, ThreeD, Drafting, Legend, Schedule, DraftingView), name, level or placement on a sheet.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "type": {
+      "type": "string",
+      "description": "ViewType name, e.g. FloorPlan"
+     },
+     "name_contains": {
+      "type": "string",
+      "description": "Part of the view name"
+     },
+     "level": {
+      "type": "string",
+      "description": "Level name"
+     },
+     "placed": {
+      "type": "boolean",
+      "description": "true = only views on a sheet, false = only views on no sheet"
+     },
+     "templates": {
+      "type": "boolean",
+      "description": "true = list view templates instead"
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Max rows returned (default 200)"
+     },
+     "offset": {
+      "type": "integer",
+      "description": "Rows to skip, for paging"
+     }
+    }
+   },
+   "annotations": {
+    "title": "List views",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "set_active_view",
+   "title": "Open a view",
+   "description": "Make a view (or sheet) the active view in Revit, by name or id.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "view": {
+      "type": "string",
+      "description": "View or sheet name, or id"
+     }
+    },
+    "required": [
+     "view"
+    ]
+   },
+   "annotations": {
+    "title": "Open a view",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "create_view",
+   "title": "Create a view",
+   "description": "Create a view: kind=floor_plan, ceiling_plan, structural_plan (level), 3d (isometric), drafting, or duplicate (view + mode plain | detailing | dependent). Optional name, scale and view template.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "kind": {
+      "type": "string",
+      "enum": [
+       "floor_plan",
+       "ceiling_plan",
+       "structural_plan",
+       "3d",
+       "drafting",
+       "duplicate"
+      ],
+      "description": "View kind"
+     },
+     "level": {
+      "type": "string",
+      "description": "Level name or id for plans (default: active view level)"
+     },
+     "view": {
+      "type": "string",
+      "description": "duplicate: view to duplicate (default active)"
+     },
+     "mode": {
+      "type": "string",
+      "enum": [
+       "plain",
+       "detailing",
+       "dependent"
+      ],
+      "description": "duplicate mode"
+     },
+     "name": {
+      "type": "string",
+      "description": "New view name"
+     },
+     "scale": {
+      "type": "integer",
+      "description": "View scale, e.g. 100 for 1:100"
+     },
+     "template": {
+      "type": "string",
+      "description": "View template name to apply"
+     }
+    },
+    "required": [
+     "kind"
+    ]
+   },
+   "annotations": {
+    "title": "Create a view",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "get_selection",
+   "title": "Get selection",
+   "description": "Elements the user has selected in Revit (ids + summary).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "limit": {
+      "type": "integer",
+      "description": "Max rows returned (default 200)"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Get selection",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "set_selection",
+   "title": "Select / zoom elements",
+   "description": "Select elements in Revit so the user sees them; zoom=true also zooms the active view to them. Empty list clears the selection.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "element_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Element ids (from query_elements, get_selection or a create tool)"
+     },
+     "zoom": {
+      "type": "boolean",
+      "description": "Zoom to the elements (default true)"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Select / zoom elements",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "view_graphics",
+   "title": "Color, hide or isolate in a view",
+   "description": "Change how elements look in a view (active by default): action=color (rgb [r,g,b], transparency 0-100, solid fill), reset (remove overrides), hide, unhide, isolate (temporary isolate), clear_temporary (end temporary hide/isolate).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "color",
+       "reset",
+       "hide",
+       "unhide",
+       "isolate",
+       "clear_temporary"
+      ],
+      "description": "What to do"
+     },
+     "element_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Element ids (from query_elements, get_selection or a create tool)"
+     },
+     "rgb": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Colour [r, g, b] 0-255 (default orange)"
+     },
+     "transparency": {
+      "type": "integer",
+      "description": "Surface transparency 0-100"
+     },
+     "view": {
+      "type": "string",
+      "description": "View name or id (default active)"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "annotations": {
+    "title": "Color, hide or isolate in a view",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "export_image",
+   "title": "Look at a view (image)",
+   "description": "Render a view (default: the active one) to a PNG and return it so you can see the model. pixels = width (default 1400, max 2400). save_path also keeps the file.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "view": {
+      "type": "string",
+      "description": "View or sheet name or id (default active)"
+     },
+     "pixels": {
+      "type": "integer",
+      "description": "Image width in pixels"
+     },
+     "save_path": {
+      "type": "string",
+      "description": "Optional .png path to keep"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Look at a view (image)",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "query_elements",
+   "title": "Find elements",
+   "description": "Find model elements in the active model. Filters combine: categories (Walls, Doors, OST_StructuralColumns...), class (Wall, Floor, FamilyInstance...), in_view (only what the active view shows), selection (only the selected elements), level, type_contains (family or type name), name_contains, where [{parameter, op: eq|ne|contains|gt|lt|gte|lte|empty|not_empty, value}]. detail=count (default on an unfiltered query) | summary | full (location + bounding box). fields = parameter values to add per element. group_by=category|family|type|level returns counts. Numbers are mm, m2, m3, degrees.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "categories": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Category names or OST_ names"
+     },
+     "class": {
+      "type": "string",
+      "description": "Revit API class, e.g. Wall, Floor, FamilyInstance, Grid"
+     },
+     "in_view": {
+      "type": "boolean",
+      "description": "Only elements visible in the active view"
+     },
+     "view": {
+      "type": "string",
+      "description": "Only elements visible in this view (name or id)"
+     },
+     "selection": {
+      "type": "boolean",
+      "description": "Only the selected elements"
+     },
+     "level": {
+      "type": "string",
+      "description": "Level name"
+     },
+     "type_contains": {
+      "type": "string",
+      "description": "Part of the family or type name"
+     },
+     "name_contains": {
+      "type": "string",
+      "description": "Part of the element name"
+     },
+     "where": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "parameter": {
+         "type": "string"
+        },
+        "op": {
+         "type": "string"
+        },
+        "value": {}
+       }
+      },
+      "description": "Parameter conditions, all must match"
+     },
+     "fields": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Parameter names to return per element"
+     },
+     "detail": {
+      "type": "string",
+      "enum": [
+       "count",
+       "summary",
+       "full"
+      ],
+      "description": "How much per element"
+     },
+     "group_by": {
+      "type": "string",
+      "enum": [
+       "category",
+       "family",
+       "type",
+       "level"
+      ],
+      "description": "Return counts per group"
+     },
+     "types": {
+      "type": "boolean",
+      "description": "Query element types instead of instances"
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Max rows returned (default 200)"
+     },
+     "offset": {
+      "type": "integer",
+      "description": "Rows to skip, for paging"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Find elements",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "get_element_info",
+   "title": "Element details",
+   "description": "Everything about up to 50 elements: category, family, type, level, location, bounding box, host, workset, phase, group, and all parameters (instance; type ones too with include_type=true). Use parameter names from here in set_parameter.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "element_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Element ids (from query_elements, get_selection or a create tool)"
+     },
+     "include_type": {
+      "type": "boolean",
+      "description": "Also list the type parameters"
+     },
+     "parameters": {
+      "type": "boolean",
+      "description": "List parameters (default true)"
+     }
+    },
+    "required": [
+     "element_ids"
+    ]
+   },
+   "annotations": {
+    "title": "Element details",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "list_types",
+   "title": "List family types",
+   "description": "Element types (wall types, floor types, family symbols, title blocks, text types...) by category or class, with their ids; use the 'Family: Type' label in create tools. count=true adds how many instances use each type.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "category": {
+      "type": "string",
+      "description": "Category, e.g. Walls, Doors, Title Blocks"
+     },
+     "class": {
+      "type": "string",
+      "description": "Type class, e.g. WallType, FloorType, FamilySymbol, TextNoteType, ViewFamilyType"
+     },
+     "name_contains": {
+      "type": "string",
+      "description": "Part of the family or type name"
+     },
+     "count": {
+      "type": "boolean",
+      "description": "Count instances per type"
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Max rows returned (default 200)"
+     },
+     "offset": {
+      "type": "integer",
+      "description": "Rows to skip, for paging"
+     }
+    }
+   },
+   "annotations": {
+    "title": "List family types",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "list_datums",
+   "title": "Levels and grids",
+   "description": "All levels (name, elevation mm) and grids (name, start/end mm) of the active model.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {}
+   },
+   "annotations": {
+    "title": "Levels and grids",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "set_parameter",
+   "title": "Set parameter values",
+   "description": "Set parameters on elements, one Undo step for the whole call. Either element_ids + values {name: value} (same values on every element), or changes [{element_id, parameter, value}] (a value per element). target=type writes the type parameter instead (every instance of that type changes). Numbers are mm, m2, m3, degrees; text on a number parameter is parsed by Revit (\"1200\", \"1.2 m\"); yes/no as true/false; an id parameter takes an id or a level / material / type name. Built-in names like ALL_MODEL_MARK work too. Elements that fail are listed; the others are still set.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "element_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Element ids (from query_elements, get_selection or a create tool)"
+     },
+     "values": {
+      "type": "object",
+      "description": "Parameter name -> value, applied to every element in element_ids"
+     },
+     "changes": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "element_id": {
+         "type": "integer"
+        },
+        "parameter": {
+         "type": "string"
+        },
+        "value": {}
+       }
+      },
+      "description": "One change per item"
+     },
+     "target": {
+      "type": "string",
+      "enum": [
+       "instance",
+       "type"
+      ],
+      "description": "instance (default) or type"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Set parameter values",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "create_walls",
+   "title": "Create walls",
+   "description": "Create walls from lines. walls=[{start, end, type?, level?, height?, base_offset?, structural?, flip?}] (mm), or points=[[x,y],...] for a chain (closed=true joins the last point to the first) with shared type / level / height. Defaults: first wall type, the active view's level, height 3000 mm.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "walls": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      },
+      "description": "Walls: start, end [x,y] mm; optional type, level, height, base_offset, structural, flip"
+     },
+     "points": {
+      "type": "array",
+      "items": {
+       "type": "array",
+       "items": {
+        "type": "number"
+       }
+      },
+      "description": "Chain of points [x, y] mm"
+     },
+     "closed": {
+      "type": "boolean",
+      "description": "Close the chain"
+     },
+     "type": {
+      "type": "string",
+      "description": "Wall type label or name"
+     },
+     "level": {
+      "type": "string",
+      "description": "Base level name or id"
+     },
+     "height": {
+      "type": "number",
+      "description": "Unconnected height in mm (default 3000)"
+     },
+     "top_level": {
+      "type": "string",
+      "description": "Top constraint level (instead of height)"
+     },
+     "base_offset": {
+      "type": "number",
+      "description": "Base offset in mm"
+     },
+     "structural": {
+      "type": "boolean",
+      "description": "Structural wall"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Create walls",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "create_floor",
+   "title": "Create a floor or ceiling",
+   "description": "Create a floor (kind=floor, default) or ceiling (kind=ceiling) from a closed boundary of points [[x,y],...] mm on a level, with an optional type and height offset (mm). room_id uses that room's boundary instead.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "kind": {
+      "type": "string",
+      "enum": [
+       "floor",
+       "ceiling"
+      ],
+      "description": "floor or ceiling"
+     },
+     "points": {
+      "type": "array",
+      "items": {
+       "type": "array",
+       "items": {
+        "type": "number"
+       }
+      },
+      "description": "Boundary points [x, y] mm, in order (closed automatically)"
+     },
+     "room_id": {
+      "type": "integer",
+      "description": "Use the outer boundary of this room"
+     },
+     "type": {
+      "type": "string",
+      "description": "Floor / ceiling type label or name"
+     },
+     "level": {
+      "type": "string",
+      "description": "Level name or id"
+     },
+     "offset": {
+      "type": "number",
+      "description": "Height offset from the level in mm"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Create a floor or ceiling",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "create_levels",
+   "title": "Create levels",
+   "description": "Create levels: levels=[{name, elevation}] (elevation mm). plan=true (default) also makes a floor plan for each.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "levels": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "elevation": {
+         "type": "number"
+        }
+       }
+      },
+      "description": "Levels to create"
+     },
+     "plan": {
+      "type": "boolean",
+      "description": "Create a floor plan per level (default true)"
+     }
+    },
+    "required": [
+     "levels"
+    ]
+   },
+   "annotations": {
+    "title": "Create levels",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "create_grids",
+   "title": "Create grids",
+   "description": "Create straight grids: grids=[{name?, start, end}] (mm). Names are kept when free.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "grids": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "start": {
+         "type": "array"
+        },
+        "end": {
+         "type": "array"
+        }
+       }
+      },
+      "description": "Grids to create"
+     }
+    },
+    "required": [
+     "grids"
+    ]
+   },
+   "annotations": {
+    "title": "Create grids",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "place_family_instance",
+   "title": "Place family instances",
+   "description": "Place instances of a family type at points (mm): furniture, equipment, columns, doors and windows. type = 'Family: Type' label (list_types). Doors / windows need a host wall: host_id, or the nearest wall is found. rotation in degrees. Structural columns are placed level to the level above unless height is given.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "type": {
+      "type": "string",
+      "description": "Family type label (Family: Type), type name, or id"
+     },
+     "category": {
+      "type": "string",
+      "description": "Category to search the type in (optional)"
+     },
+     "points": {
+      "type": "array",
+      "items": {
+       "type": "array",
+       "items": {
+        "type": "number"
+       }
+      },
+      "description": "Insertion points [x, y] or [x, y, z] mm"
+     },
+     "level": {
+      "type": "string",
+      "description": "Level name or id (default: active view level)"
+     },
+     "host_id": {
+      "type": "integer",
+      "description": "Host element (wall) for hosted families"
+     },
+     "rotation": {
+      "type": "number",
+      "description": "Rotation in degrees about Z"
+     },
+     "offset": {
+      "type": "number",
+      "description": "Elevation from level in mm"
+     }
+    },
+    "required": [
+     "type",
+     "points"
+    ]
+   },
+   "annotations": {
+    "title": "Place family instances",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "create_rooms",
+   "title": "Create rooms",
+   "description": "Place rooms on a level: points=[[x,y],...] mm (one room per point, inside enclosed boundaries) with optional names / numbers, or all=true to fill every enclosed region on the level that has no room yet.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "level": {
+      "type": "string",
+      "description": "Level name or id (default: active view level)"
+     },
+     "points": {
+      "type": "array",
+      "items": {
+       "type": "array",
+       "items": {
+        "type": "number"
+       }
+      },
+      "description": "Room points [x, y] mm"
+     },
+     "names": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Room names, by point order"
+     },
+     "numbers": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Room numbers, by point order"
+     },
+     "all": {
+      "type": "boolean",
+      "description": "Create rooms in all closed regions of the level"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Create rooms",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "load_family",
+   "title": "Load a family",
+   "description": "Load an .rfa family file into the model (overwrite=true replaces an existing one and its parameter values).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "path": {
+      "type": "string",
+      "description": "Path of the .rfa"
+     },
+     "overwrite": {
+      "type": "boolean",
+      "description": "Replace an existing family of that name"
+     }
+    },
+    "required": [
+     "path"
+    ]
+   },
+   "annotations": {
+    "title": "Load a family",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "transform_elements",
+   "title": "Move, copy, rotate or mirror",
+   "description": "operation=move (vector [dx,dy,dz] mm), copy (vector; copies=N makes N copies spaced by vector), rotate (angle degrees about a vertical axis through center [x,y] mm, default the elements' centre), mirror (axis_start / axis_end [x,y] mm; copy=true keeps the originals). One Undo step; new ids are returned for copy / mirror copies.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "element_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Element ids (from query_elements, get_selection or a create tool)"
+     },
+     "operation": {
+      "type": "string",
+      "enum": [
+       "move",
+       "copy",
+       "rotate",
+       "mirror"
+      ],
+      "description": "What to do"
+     },
+     "vector": {
+      "type": "array",
+      "items": {
+       "type": "number"
+      },
+      "minItems": 2,
+      "maxItems": 3,
+      "description": "Offset [dx, dy] or [dx, dy, dz] mm"
+     },
+     "copies": {
+      "type": "integer",
+      "description": "copy: number of copies (default 1)"
+     },
+     "angle": {
+      "type": "number",
+      "description": "rotate: degrees, counter-clockwise"
+     },
+     "center": {
+      "type": "array",
+      "items": {
+       "type": "number"
+      },
+      "minItems": 2,
+      "maxItems": 3,
+      "description": "rotate: axis point [x, y] mm"
+     },
+     "axis_start": {
+      "type": "array",
+      "items": {
+       "type": "number"
+      },
+      "minItems": 2,
+      "maxItems": 3,
+      "description": "mirror: axis start [x, y] mm"
+     },
+     "axis_end": {
+      "type": "array",
+      "items": {
+       "type": "number"
+      },
+      "minItems": 2,
+      "maxItems": 3,
+      "description": "mirror: axis end [x, y] mm"
+     },
+     "copy": {
+      "type": "boolean",
+      "description": "mirror: keep the originals"
+     }
+    },
+    "required": [
+     "element_ids",
+     "operation"
+    ]
+   },
+   "annotations": {
+    "title": "Move, copy, rotate or mirror",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "delete_elements",
+   "title": "Delete elements",
+   "description": "Delete elements (and what depends on them: tags, hosted doors...). dry_run=true only reports what would be deleted. One Undo step.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "element_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Element ids (from query_elements, get_selection or a create tool)"
+     },
+     "dry_run": {
+      "type": "boolean",
+      "description": "Report only, delete nothing"
+     }
+    },
+    "required": [
+     "element_ids"
+    ]
+   },
+   "annotations": {
+    "title": "Delete elements",
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "create_annotation",
+   "title": "Add text, lines, tags or dimensions",
+   "description": "2D annotation in a view (default active). kind=text: items [{point, text}] (+ text_type); kind=detail_line: items [{start, end}] (+ line_style); kind=tag: element_ids, tags each element at its centre (leader=true adds a leader); kind=dimension: items [{start, end, element_ids?}] dimensions the elements' faces crossed by the line (walls, grids) or, without element_ids, grids crossed by it. Points in mm.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "kind": {
+      "type": "string",
+      "enum": [
+       "text",
+       "detail_line",
+       "tag",
+       "dimension"
+      ],
+      "description": "What to add"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      },
+      "description": "text: {point, text}; detail_line: {start, end}; dimension: {start, end, element_ids?}"
+     },
+     "element_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Element ids (from query_elements, get_selection or a create tool)"
+     },
+     "view": {
+      "type": "string",
+      "description": "View name or id (default active)"
+     },
+     "text_type": {
+      "type": "string",
+      "description": "Text note type name"
+     },
+     "line_style": {
+      "type": "string",
+      "description": "Line style name, e.g. Thin Lines"
+     },
+     "leader": {
+      "type": "boolean",
+      "description": "tag: add a leader"
+     }
+    },
+    "required": [
+     "kind"
+    ]
+   },
+   "annotations": {
+    "title": "Add text, lines, tags or dimensions",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "list_sheets",
+   "title": "List sheets",
+   "description": "Sheets of the active model: number, name, title block, the views and schedules placed on each, current revision.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "number_contains": {
+      "type": "string",
+      "description": "Part of the sheet number"
+     },
+     "name_contains": {
+      "type": "string",
+      "description": "Part of the sheet name"
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Max rows returned (default 200)"
+     },
+     "offset": {
+      "type": "integer",
+      "description": "Rows to skip, for paging"
+     }
+    }
+   },
+   "annotations": {
+    "title": "List sheets",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "create_sheets",
+   "title": "Create sheets",
+   "description": "Create sheets: sheets=[{number, name}] with a title block ('Family: Type' label, default the first one loaded).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "sheets": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "number": {
+         "type": "string"
+        },
+        "name": {
+         "type": "string"
+        }
+       }
+      },
+      "description": "Sheets to create"
+     },
+     "title_block": {
+      "type": "string",
+      "description": "Title block type label or name"
+     }
+    },
+    "required": [
+     "sheets"
+    ]
+   },
+   "annotations": {
+    "title": "Create sheets",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "place_views_on_sheet",
+   "title": "Place views on a sheet",
+   "description": "Place views (plans, sections, 3D, drafting, legends) and schedules on a sheet: views=[{view, point?}] with view name or id and the centre point on the sheet in mm (default: the sheet centre, then shifted). A view already on another sheet is reported.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "sheet": {
+      "type": "string",
+      "description": "Sheet number, name or id"
+     },
+     "views": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "view": {
+         "type": "string"
+        },
+        "point": {
+         "type": "array"
+        }
+       }
+      },
+      "description": "Views to place"
+     }
+    },
+    "required": [
+     "sheet",
+     "views"
+    ]
+   },
+   "annotations": {
+    "title": "Place views on a sheet",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "get_schedule_data",
+   "title": "Read a schedule",
+   "description": "Rows of a schedule as Revit shows them (the first row is usually the headers). Without schedule: lists the schedules. csv_path also writes a UTF-8 CSV that Excel opens (delimiter ; for Excel with a decimal comma).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "schedule": {
+      "type": "string",
+      "description": "Schedule name or id"
+     },
+     "max_rows": {
+      "type": "integer",
+      "description": "Max rows returned (default 500)"
+     },
+     "csv_path": {
+      "type": "string",
+      "description": "Optional .csv path to write"
+     },
+     "delimiter": {
+      "type": "string",
+      "description": "CSV delimiter, default comma"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Read a schedule",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "create_schedule",
+   "title": "Create a schedule",
+   "description": "Create a schedule of a category with fields by name (as in Revit's Fields dialog, e.g. Family and Type, Level, Mark, Area, Volume, Count). Unknown fields are listed with the available ones.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "category": {
+      "type": "string",
+      "description": "Category, e.g. Walls, Doors, Rooms"
+     },
+     "fields": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Field names in order"
+     },
+     "name": {
+      "type": "string",
+      "description": "Schedule name"
+     }
+    },
+    "required": [
+     "category",
+     "fields"
+    ]
+   },
+   "annotations": {
+    "title": "Create a schedule",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "export_documents",
+   "title": "Export PDF, DWG or IFC",
+   "description": "Export to a folder. format=pdf (sheets / views; combine=true makes one PDF), dwg (one file per sheet / view), ifc (the whole model). sheets = sheet numbers or ['*'] for all; views = view names or ids. file_name without extension.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "format": {
+      "type": "string",
+      "enum": [
+       "pdf",
+       "dwg",
+       "ifc"
+      ],
+      "description": "Output format"
+     },
+     "folder": {
+      "type": "string",
+      "description": "Output folder (created if missing)"
+     },
+     "sheets": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Sheet numbers, or * for every sheet"
+     },
+     "views": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "View names or ids"
+     },
+     "file_name": {
+      "type": "string",
+      "description": "File name (pdf combined / ifc / dwg prefix)"
+     },
+     "combine": {
+      "type": "boolean",
+      "description": "pdf: one file for everything (default true)"
+     }
+    },
+    "required": [
+     "format",
+     "folder"
+    ]
+   },
+   "annotations": {
+    "title": "Export PDF, DWG or IFC",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "model_overview",
+   "title": "Model health overview",
+   "description": "One-call audit of the active model: element counts per category (top 40), warnings (count + top kinds), families, in-place families, views / sheets / views not on sheets, rooms (unplaced / not enclosed), links, imported CAD, worksets, file size.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {}
+   },
+   "annotations": {
+    "title": "Model health overview",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "get_warnings",
+   "title": "Revit warnings",
+   "description": "The model's warnings grouped by message, with counts and the element ids involved (first ids per group).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "contains": {
+      "type": "string",
+      "description": "Only messages containing this text"
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Max rows returned (default 200)"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Revit warnings",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "list_worksets",
+   "title": "List worksets",
+   "description": "User worksets of a workshared model: id, name, open, editable, owner, visible by default, active, element count.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "count": {
+      "type": "boolean",
+      "description": "Count elements per workset (slower on big models)"
+     }
+    }
+   },
+   "annotations": {
+    "title": "List worksets",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "manage_worksets",
+   "title": "Create, rename or activate worksets",
+   "description": "action=create (names), rename (name, new_name), set_active (name), visibility (name, visible true/false in a view, default the active one), delete (name, move_to: workset that receives its elements).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "create",
+       "rename",
+       "set_active",
+       "visibility",
+       "delete"
+      ],
+      "description": "What to do"
+     },
+     "names": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "create: workset names"
+     },
+     "name": {
+      "type": "string",
+      "description": "Workset name"
+     },
+     "new_name": {
+      "type": "string",
+      "description": "rename: new name"
+     },
+     "visible": {
+      "type": "boolean",
+      "description": "visibility: show (true) or hide (false)"
+     },
+     "view": {
+      "type": "string",
+      "description": "visibility: view name or id"
+     },
+     "move_to": {
+      "type": "string",
+      "description": "delete: workset that receives the elements"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "annotations": {
+    "title": "Create, rename or activate worksets",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "set_element_workset",
+   "title": "Move elements to a workset",
+   "description": "Put elements on a workset (by name). Elements must be editable by you (not borrowed by someone else).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "element_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Element ids (from query_elements, get_selection or a create tool)"
+     },
+     "workset": {
+      "type": "string",
+      "description": "Workset name"
+     }
+    },
+    "required": [
+     "element_ids",
+     "workset"
+    ]
+   },
+   "annotations": {
+    "title": "Move elements to a workset",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "list_links",
+   "title": "List linked models and CAD",
+   "description": "Revit links (type, path, loaded, instances, pinned) and CAD imports / links (name, view-specific, owner view, pinned).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {}
+   },
+   "annotations": {
+    "title": "List linked models and CAD",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "manage_links",
+   "title": "Load, unload, reload or link files",
+   "description": "action=link (path of a .rvt, or .dwg / .dxf / .dgn / .dwf: placed origin to origin, CAD in the active view only when this_view_only=true), load, unload, reload (name of the link type), reload_from (name + path), pin / unpin (element_ids of link instances).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "link",
+       "load",
+       "unload",
+       "reload",
+       "reload_from",
+       "pin",
+       "unpin"
+      ],
+      "description": "What to do"
+     },
+     "path": {
+      "type": "string",
+      "description": "File path for link / reload_from"
+     },
+     "name": {
+      "type": "string",
+      "description": "Link type name (from list_links)"
+     },
+     "this_view_only": {
+      "type": "boolean",
+      "description": "CAD link: only in the active view"
+     },
+     "element_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Element ids (from query_elements, get_selection or a create tool)"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "annotations": {
+    "title": "Load, unload, reload or link files",
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "manage_groups",
+   "title": "Group, ungroup and place groups",
+   "description": "action=list (group types with instance counts), create (element_ids, name), ungroup (element_ids of groups), place (group_type name, points mm), rename (group_type, new_name).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "list",
+       "create",
+       "ungroup",
+       "place",
+       "rename"
+      ],
+      "description": "What to do"
+     },
+     "element_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Element ids (from query_elements, get_selection or a create tool)"
+     },
+     "name": {
+      "type": "string",
+      "description": "create: group name"
+     },
+     "group_type": {
+      "type": "string",
+      "description": "Group type name"
+     },
+     "points": {
+      "type": "array",
+      "items": {
+       "type": "array",
+       "items": {
+        "type": "number"
+       }
+      },
+      "description": "place: points [x, y] or [x, y, z] mm"
+     },
+     "new_name": {
+      "type": "string",
+      "description": "rename: new name"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "annotations": {
+    "title": "Group, ungroup and place groups",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "list_materials",
+   "title": "List materials",
+   "description": "Materials of the model: id, name, class, colour [r,g,b], transparency, whether elements use it (used=true lists only those).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "name_contains": {
+      "type": "string",
+      "description": "Part of the name"
+     },
+     "used": {
+      "type": "boolean",
+      "description": "Only materials painted or assigned on elements"
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Max rows returned (default 200)"
+     }
+    }
+   },
+   "annotations": {
+    "title": "List materials",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "manage_material",
+   "title": "Create or change materials",
+   "description": "action=create (name, from: material to duplicate), rename (name, new_name), set (name; rgb [r,g,b], transparency 0-100, shininess 0-128, smoothness 0-100, material_class), delete (name).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "create",
+       "rename",
+       "set",
+       "delete"
+      ],
+      "description": "What to do"
+     },
+     "name": {
+      "type": "string",
+      "description": "Material name"
+     },
+     "from": {
+      "type": "string",
+      "description": "create: material to copy"
+     },
+     "new_name": {
+      "type": "string",
+      "description": "rename: new name"
+     },
+     "rgb": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Colour [r, g, b] 0-255"
+     },
+     "transparency": {
+      "type": "integer",
+      "description": "0-100"
+     },
+     "shininess": {
+      "type": "integer",
+      "description": "0-128"
+     },
+     "smoothness": {
+      "type": "integer",
+      "description": "0-100"
+     },
+     "material_class": {
+      "type": "string",
+      "description": "Material class, e.g. Concrete"
+     }
+    },
+    "required": [
+     "action",
+     "name"
+    ]
+   },
+   "annotations": {
+    "title": "Create or change materials",
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "get_material_quantities",
+   "title": "Material take-off",
+   "description": "Area (m2) and volume (m3) per material over elements of some categories (default walls, floors, roofs, ceilings, structural columns and framing), optionally per level.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "categories": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Categories"
+     },
+     "level": {
+      "type": "string",
+      "description": "Only this level"
+     },
+     "by_category": {
+      "type": "boolean",
+      "description": "Split each material by category"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Material take-off",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "manage_revisions",
+   "title": "Revisions",
+   "description": "action=list (all revisions and the sheets showing them), create (description, date, issued_by, issued_to), add_to_sheets (revision id or description + sheets), remove_from_sheets, issue (mark issued).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "list",
+       "create",
+       "add_to_sheets",
+       "remove_from_sheets",
+       "issue"
+      ],
+      "description": "What to do"
+     },
+     "revision": {
+      "type": "string",
+      "description": "Revision id or description"
+     },
+     "description": {
+      "type": "string",
+      "description": "create: description"
+     },
+     "date": {
+      "type": "string",
+      "description": "create: date text"
+     },
+     "issued_by": {
+      "type": "string",
+      "description": "Issued by"
+     },
+     "issued_to": {
+      "type": "string",
+      "description": "Issued to"
+     },
+     "sheets": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Sheet numbers, or * for all"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "annotations": {
+    "title": "Revisions",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "project_storage",
+   "title": "Store notes in the model",
+   "description": "Keep small key / value data inside the model (extensible storage on Project Information), e.g. a checklist or the state of a long job: action=get (key, or all), set (key, value: any JSON), delete (key).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "get",
+       "set",
+       "delete"
+      ],
+      "description": "What to do"
+     },
+     "key": {
+      "type": "string",
+      "description": "Key"
+     },
+     "value": {
+      "description": "Value to store (JSON)"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "annotations": {
+    "title": "Store notes in the model",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "manage_view_templates",
+   "title": "View templates",
+   "description": "action=list (templates and how many views use each), apply (template + views: assigns it), apply_once (copies its settings, no link), remove (views: no template), create_from_view (view + name), transfer (from_document: title of another open model, templates: names or * ; copies them into the active model).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "list",
+       "apply",
+       "apply_once",
+       "remove",
+       "create_from_view",
+       "transfer"
+      ],
+      "description": "What to do"
+     },
+     "template": {
+      "type": "string",
+      "description": "Template name or id"
+     },
+     "views": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "View names or ids"
+     },
+     "view": {
+      "type": "string",
+      "description": "create_from_view: source view"
+     },
+     "name": {
+      "type": "string",
+      "description": "create_from_view: template name"
+     },
+     "from_document": {
+      "type": "string",
+      "description": "transfer: source model title"
+     },
+     "templates": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "transfer: template names, or *"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "annotations": {
+    "title": "View templates",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "list_view_filters",
+   "title": "List view filters",
+   "description": "Rule-based filters of the model (name, categories) and, with view, the filters applied to it with visibility.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "view": {
+      "type": "string",
+      "description": "Also list the filters on this view (name or id)"
+     }
+    }
+   },
+   "annotations": {
+    "title": "List view filters",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "create_view_filter",
+   "title": "Create a view filter",
+   "description": "Create a rule-based view filter: categories + rules [{parameter, op: equals|not_equals|contains|not_contains|begins_with|greater|less, value}] (all must match; numbers in mm / m2 / m3 / degrees for those parameters). Optional: add it to views with an override colour rgb and / or visible=false.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Filter name"
+     },
+     "categories": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Categories"
+     },
+     "rules": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "parameter": {
+         "type": "string"
+        },
+        "op": {
+         "type": "string"
+        },
+        "value": {}
+       }
+      },
+      "description": "Rules, all must match"
+     },
+     "views": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Views (names or ids) to add the filter to"
+     },
+     "rgb": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Override colour [r, g, b] in those views"
+     },
+     "visible": {
+      "type": "boolean",
+      "description": "false hides the filtered elements in those views"
+     }
+    },
+    "required": [
+     "name",
+     "categories",
+     "rules"
+    ]
+   },
+   "annotations": {
+    "title": "Create a view filter",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "manage_view",
+   "title": "View settings",
+   "description": "Change a view (default active): scale, detail_level (coarse|medium|fine), display (wireframe|hidden|shaded|realistic|consistent), discipline, crop (true / false), crop_box {min, max} mm, section_box {min, max} mm (3D views), section_box_active, name.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "view": {
+      "type": "string",
+      "description": "View name or id (default active)"
+     },
+     "name": {
+      "type": "string",
+      "description": "New name"
+     },
+     "scale": {
+      "type": "integer",
+      "description": "e.g. 100 for 1:100"
+     },
+     "detail_level": {
+      "type": "string",
+      "enum": [
+       "coarse",
+       "medium",
+       "fine"
+      ],
+      "description": "Detail level"
+     },
+     "display": {
+      "type": "string",
+      "enum": [
+       "wireframe",
+       "hidden",
+       "shaded",
+       "realistic",
+       "consistent"
+      ],
+      "description": "Visual style"
+     },
+     "discipline": {
+      "type": "string",
+      "enum": [
+       "architectural",
+       "structural",
+       "mechanical",
+       "electrical",
+       "plumbing",
+       "coordination"
+      ],
+      "description": "Discipline"
+     },
+     "crop": {
+      "type": "boolean",
+      "description": "Crop region on"
+     },
+     "crop_box": {
+      "type": "object",
+      "description": "{min:[x,y,z], max:[x,y,z]} mm, model coordinates"
+     },
+     "section_box": {
+      "type": "object",
+      "description": "{min:[x,y,z], max:[x,y,z]} mm (3D view)"
+     },
+     "section_box_active": {
+      "type": "boolean",
+      "description": "3D: section box on"
+     }
+    }
+   },
+   "annotations": {
+    "title": "View settings",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "list_project_parameters",
+   "title": "List project parameters",
+   "description": "Project and shared parameters bound in the model: name, type, instance or type, categories, group, shared GUID.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {}
+   },
+   "annotations": {
+    "title": "List project parameters",
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "create_project_parameter",
+   "title": "Add a project parameter",
+   "description": "Add a parameter to categories: name, data_type (text|integer|number|length|area|volume|angle|yesno|url|material), instance (default true), group (data|text|identity|dimensions|constraints|general), categories. Made through a temporary shared parameter file, so it can be scheduled and tagged.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Parameter name"
+     },
+     "data_type": {
+      "type": "string",
+      "enum": [
+       "text",
+       "integer",
+       "number",
+       "length",
+       "area",
+       "volume",
+       "angle",
+       "yesno",
+       "url",
+       "material"
+      ],
+      "description": "Data type"
+     },
+     "instance": {
+      "type": "boolean",
+      "description": "Instance (true) or type (false)"
+     },
+     "group": {
+      "type": "string",
+      "enum": [
+       "data",
+       "text",
+       "identity",
+       "dimensions",
+       "constraints",
+       "general"
+      ],
+      "description": "Properties group"
+     },
+     "categories": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Categories"
+     }
+    },
+    "required": [
+     "name",
+     "categories"
+    ]
+   },
+   "annotations": {
+    "title": "Add a project parameter",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "purge_unused",
+   "title": "Purge unused",
+   "description": "Delete what nothing uses. dry_run=true (default) only lists it. Revit 2024+: everything Purge Unused would remove (one pass); 2022-2023: unused family types, view templates, view filters and materials. categories narrows it (Revit 2024+).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "dry_run": {
+      "type": "boolean",
+      "description": "List only (default true)"
+     },
+     "categories": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Only these categories (Revit 2024+)"
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Max rows returned (default 200)"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Purge unused",
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "join_geometry",
+   "title": "Join, unjoin or switch join",
+   "description": "action=join: every pair of the given elements whose boxes touch is joined (or pairs [[a, b], ...]); unjoin; switch (switch join order of pairs); check (list which pairs are joined).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "join",
+       "unjoin",
+       "switch",
+       "check"
+      ],
+      "description": "What to do"
+     },
+     "element_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Element ids (from query_elements, get_selection or a create tool)"
+     },
+     "pairs": {
+      "type": "array",
+      "items": {
+       "type": "array",
+       "items": {
+        "type": "integer"
+       }
+      },
+      "description": "Element id pairs"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "annotations": {
+    "title": "Join, unjoin or switch join",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "split_element",
+   "title": "Split walls, beams, pipes or ducts",
+   "description": "Split a wall, beam (or other line-based element), pipe or duct at points (mm, projected onto it). Returns the new pieces.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "element_id": {
+      "type": "integer",
+      "description": "Element to split"
+     },
+     "points": {
+      "type": "array",
+      "items": {
+       "type": "array",
+       "items": {
+        "type": "number"
+       }
+      },
+      "description": "Split points [x, y] or [x, y, z] mm"
+     }
+    },
+    "required": [
+     "element_id",
+     "points"
+    ]
+   },
+   "annotations": {
+    "title": "Split walls, beams, pipes or ducts",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "rehost_to_level",
+   "title": "Move elements to another level",
+   "description": "Change the level of walls, floors, ceilings, columns, family instances, rooms... keeping them where they are (the offset is adjusted). keep_position=false keeps the offset instead (the element moves with the level).",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "element_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Element ids (from query_elements, get_selection or a create tool)"
+     },
+     "level": {
+      "type": "string",
+      "description": "Target level name or id"
+     },
+     "keep_position": {
+      "type": "boolean",
+      "description": "Keep the elevation (default true)"
+     }
+    },
+    "required": [
+     "element_ids",
+     "level"
+    ]
+   },
+   "annotations": {
+    "title": "Move elements to another level",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "rename_elements",
+   "title": "Rename views, sheets, types, levels, rooms...",
+   "description": "Rename many elements at once: names [{element_id, name}], or element_ids + find / replace (regex=true for a regular expression) and / or prefix / suffix. Rooms and spaces rename their Name; sheets take number=true to change the number. dry_run=true shows the new names only.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "names": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "element_id": {
+         "type": "integer"
+        },
+        "name": {
+         "type": "string"
+        }
+       }
+      },
+      "description": "Exact new names"
+     },
+     "element_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Element ids (from query_elements, get_selection or a create tool)"
+     },
+     "find": {
+      "type": "string",
+      "description": "Text to find"
+     },
+     "replace": {
+      "type": "string",
+      "description": "Replacement"
+     },
+     "regex": {
+      "type": "boolean",
+      "description": "find is a regular expression"
+     },
+     "prefix": {
+      "type": "string",
+      "description": "Add before"
+     },
+     "suffix": {
+      "type": "string",
+      "description": "Add after"
+     },
+     "number": {
+      "type": "boolean",
+      "description": "Sheets: change the sheet number"
+     },
+     "dry_run": {
+      "type": "boolean",
+      "description": "Preview only"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Rename views, sheets, types, levels, rooms...",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "tag_all_in_view",
+   "title": "Tag everything not tagged",
+   "description": "Tag every element of the categories visible in a view (default active) that has no tag there yet: rooms get room tags, the rest category tags. leader=true adds leaders.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "categories": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Categories, e.g. Rooms, Doors, Walls"
+     },
+     "view": {
+      "type": "string",
+      "description": "View name or id"
+     },
+     "leader": {
+      "type": "boolean",
+      "description": "Add leaders"
+     }
+    },
+    "required": [
+     "categories"
+    ]
+   },
+   "annotations": {
+    "title": "Tag everything not tagged",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "edit_text_notes",
+   "title": "Find and replace in text notes",
+   "description": "Find / replace text in text notes of a view (default all views): find, replace, regex, case_sensitive. dry_run=true lists the matches.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "find": {
+      "type": "string",
+      "description": "Text to find"
+     },
+     "replace": {
+      "type": "string",
+      "description": "Replacement (default empty)"
+     },
+     "regex": {
+      "type": "boolean",
+      "description": "Regular expression"
+     },
+     "case_sensitive": {
+      "type": "boolean",
+      "description": "Match case"
+     },
+     "view": {
+      "type": "string",
+      "description": "Only this view"
+     },
+     "dry_run": {
+      "type": "boolean",
+      "description": "Preview only"
+     }
+    },
+    "required": [
+     "find"
+    ]
+   },
+   "annotations": {
+    "title": "Find and replace in text notes",
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "place_line_based",
+   "title": "Place beams and line-based families",
+   "description": "Place structural framing (beams, braces) or other line-based families along lines [{start, end}] mm on a level, type = Family: Type label.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "type": {
+      "type": "string",
+      "description": "Family type label or name"
+     },
+     "lines": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      },
+      "description": "Lines: start, end [x, y] or [x, y, z] mm, z above the level"
+     },
+     "level": {
+      "type": "string",
+      "description": "Reference level"
+     },
+     "brace": {
+      "type": "boolean",
+      "description": "Place as braces instead of beams"
+     }
+    },
+    "required": [
+     "type",
+     "lines"
+    ]
+   },
+   "annotations": {
+    "title": "Place beams and line-based families",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "transfer_elements",
+   "title": "Copy from another open model",
+   "description": "Copy elements or types from another open model (from_document title) into the active one: element_ids from that model, or categories / classes to copy all of them (e.g. class WallType for wall types, FamilySymbol + category Doors). Types with the same name keep the destination version.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "from_document": {
+      "type": "string",
+      "description": "Title of the source model"
+     },
+     "element_ids": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Element ids (from query_elements, get_selection or a create tool)"
+     },
+     "categories": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Copy every element / type of these"
+     },
+     "class": {
+      "type": "string",
+      "description": "Revit class, e.g. WallType, FloorType, FamilySymbol, ViewSheet"
+     },
+     "types": {
+      "type": "boolean",
+      "description": "Copy types (default true when class ends with Type)"
+     }
+    },
+    "required": [
+     "from_document"
+    ]
+   },
+   "annotations": {
+    "title": "Copy from another open model",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "export_room_data",
+   "title": "Room data",
+   "description": "Rooms (or spaces, kind=spaces) with number, name, level, area m2, perimeter mm, volume m3, department, finishes and any extra parameters; csv_path writes a CSV for Excel.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "kind": {
+      "type": "string",
+      "enum": [
+       "rooms",
+       "spaces"
+      ],
+      "description": "rooms or spaces"
+     },
+     "level": {
+      "type": "string",
+      "description": "Only this level"
+     },
+     "fields": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Extra parameter names"
+     },
+     "csv_path": {
+      "type": "string",
+      "description": "Optional .csv path"
+     },
+     "delimiter": {
+      "type": "string",
+      "description": "CSV delimiter"
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Max rows returned (default 200)"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Room data",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "schedule_roundtrip",
+   "title": "Schedule to CSV and back",
+   "description": "action=export: every element of a schedule with its field values and element_id to a CSV (edit it in Excel); action=import: read that CSV back and set the changed values (dry_run=true shows the changes). Read-only fields and unchanged values are skipped.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "export",
+       "import"
+      ],
+      "description": "export or import"
+     },
+     "schedule": {
+      "type": "string",
+      "description": "Schedule name or id"
+     },
+     "csv_path": {
+      "type": "string",
+      "description": "CSV path"
+     },
+     "delimiter": {
+      "type": "string",
+      "description": "CSV delimiter, default comma"
+     },
+     "dry_run": {
+      "type": "boolean",
+      "description": "import: preview only"
+     }
+    },
+    "required": [
+     "action",
+     "schedule"
+    ]
+   },
+   "annotations": {
+    "title": "Schedule to CSV and back",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
+   "name": "send_code_to_revit",
+   "title": "Run Python in Revit",
+   "description": "Run IronPython 3.4 code (Python 3 syntax) inside Revit with the full Revit API, for anything no other tool does. In scope: doc, uidoc, uiapp, app, DB and UI (the Autodesk.Revit namespaces, and from Autodesk.Revit.DB import *), revit_version, eid(n) -> ElementId, eid_value(id) -> int, mm(feet) and ft(mm) unit helpers. Revit works in feet internally. Return data by assigning result = ... (dicts, lists, numbers, strings; ElementId becomes an int, XYZ becomes [x, y, z] mm) or output.append(...); print() is captured too. transaction=true (default): the code already runs inside ONE transaction (one Undo step) and must NOT start its own; transaction=false: no transaction is open (read only, or manage your own Transaction). Never open dialogs or windows. Errors return the Python traceback and roll everything back.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "code": {
+      "type": "string",
+      "description": "Python 3 code"
+     },
+     "purpose": {
+      "type": "string",
+      "description": "What the code does, a few plain words (shown to the user)"
+     },
+     "transaction": {
+      "type": "boolean",
+      "description": "Run inside one transaction (default true)"
+     }
+    },
+    "required": [
+     "code"
+    ]
+   },
+   "annotations": {
+    "title": "Run Python in Revit",
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "openWorldHint": false
+   }
+  }
+ ]
+}
