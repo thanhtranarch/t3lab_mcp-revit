@@ -311,9 +311,16 @@ foreach ($y in $targets) {
     if (-not (Test-Path $src)) { Warn "Revit ${y}: not in this package, skipped"; continue }
     $dst = Join-Path $Data "addin\$y"
     New-Item -ItemType Directory -Force $dst | Out-Null
-    foreach ($f in Get-ChildItem $src -File -Recurse) {
-        $to = Join-Path $dst $f.FullName.Substring($src.Length).TrimStart('\')
-        New-Item -ItemType Directory -Force (Split-Path $to) | Out-Null
+    foreach ($d in Get-ChildItem $src -Directory) {
+        # scripting\ (IronPython): locked by Revit once send_code_to_revit has run
+        try { Copy-Item $d.FullName $dst -Recurse -Force }
+        catch {
+            Warn "Revit ${y}: $($d.Name) is in use; close Revit and run this again to update it."
+            $restartRevit = $true
+        }
+    }
+    foreach ($f in Get-ChildItem $src -File) {
+        $to = Join-Path $dst $f.Name
         if ((Test-Path $to) -and ((Get-FileHash $to).Hash -eq (Get-FileHash $f.FullName).Hash)) { continue }
         try { Copy-Item $f.FullName $to -Force }
         catch {
