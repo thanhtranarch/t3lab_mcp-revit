@@ -45,17 +45,17 @@ ends with one JSON line from the bridge: `"revit_running": true` once Revit is o
 
 ## 3. What the user does
 
-1. **Open (or restart) Revit.** A ribbon tab **T3Lab MCP** appears; the server starts by itself.
+1. **Open (or restart) Revit.** A **T3Lab MCP** panel appears on Revit's **Add-Ins** tab; the server starts by itself.
    Revit 2026+ may ask once about an unsigned add-in: choose **Always Load**.
 2. **Restart the AI app** so it loads the new server (Claude Desktop: tray icon → Quit, then open it again;
    Claude Code: start a new session or run `/mcp`).
-3. Optional: **T3Lab MCP → Agent Cursors** shows what the AI does in Revit and has a **Pause** button.
+3. Optional: **Add-Ins → T3Lab MCP → Agent Cursors** shows what the AI does in Revit and has a **Pause** button.
 
 ## 4. Test
 
 Call the tool `get_revit_context` (server `t3lab-revit-mcp`). It returns the Revit version, the open models, the
 active view and the levels. If it says *not reachable*: Revit is closed, or the add-in did not load — ask the user to
-open Revit and look for the **T3Lab MCP** tab; **Status** there shows the port and the log folder
+open Revit and look for the **T3Lab MCP** panel on the **Add-Ins** tab; **Status** there shows the port and the log folder
 (`%APPDATA%\T3LabRevitMCP\logs`).
 
 ## Using the tools well

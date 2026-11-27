@@ -47,13 +47,13 @@ AI sẽ đọc [`INSTALL_FOR_AI.md`](INSTALL_FOR_AI.md), chạy installer, kiể
 | Python | Dùng Python 3.8+ có sẵn; không có thì tải bản embeddable 3.12 (~11 MB) vào `%APPDATA%\T3LabRevitMCP\python` |
 | AI app | Thêm server **`t3lab-revit-mcp`** vào mọi app tìm thấy (backup file config trước, giữ nguyên server khác) |
 
-Sau khi cài: **mở lại Revit** (tab **T3Lab MCP** xuất hiện, server tự chạy) và **mở lại AI app**.
+Sau khi cài: **mở lại Revit** (panel **T3Lab MCP** xuất hiện trong tab **Add-Ins**, server tự chạy) và **mở lại AI app**.
 Revit 2026+ có thể hỏi về add-in chưa ký số → chọn **Always Load**.
 
 ```powershell
 # Kiểm tra (không thay đổi gì): add-in từng năm, Python, AI app nào đã kết nối, Revit có đang trả lời không
 & "$env:APPDATA\T3LabRevitMCP\install.ps1" -Check
-# Chỉ kết nối lại AI app (hoặc nút T3Lab MCP > Connect AI trong Revit)
+# Chỉ kết nối lại AI app (hoặc nút Add-Ins > T3Lab MCP > Connect AI trong Revit)
 & "$env:APPDATA\T3LabRevitMCP\install.ps1" -ConnectOnly
 # Gỡ hết
 & "$env:APPDATA\T3LabRevitMCP\install.ps1" -Uninstall
@@ -65,24 +65,54 @@ Tuỳ chọn: `-Clients claude-desktop,claude-code` (chỉ vài app) · `-Years 
 > Claude Desktop ghi đè file config khi thoát, nên nếu nó đang mở: installer hỏi để đóng/mở lại, hoặc tự thêm server
 > ngay khi bạn thoát Claude Desktop.
 
-## Ribbon "T3Lab MCP"
+## Ribbon: Add-Ins › T3Lab MCP
+
+Add-in không tạo tab riêng: các nút nằm trong panel **T3Lab MCP** của tab **Add-Ins** có sẵn trong Revit.
 
 | Nút | Việc |
 |---|---|
 | **Start / Stop** | Bật/tắt server MCP (tắt thì lần mở Revit sau cũng không tự chạy, tới khi bấm Start) |
 | **Agent Cursors** | Bật/tắt thanh theo dõi AI |
 | **Connect AI** | Thêm Revit vào mọi AI app trên máy (chạy `install.ps1 -ConnectOnly`) |
-| **Status** · **Reload** | Port, số lần gọi, thư mục log · nạp lại `T3LabRevit.Core.dll` sau khi cập nhật, không cần restart Revit |
+| **Status** · **Reload** | Port, số lần gọi, hàng đợi, thư mục log · nạp lại `T3LabRevit.Core.dll` sau khi cập nhật, không cần restart Revit |
 
 ## Agent Cursors
 
-- **Thanh (bar)**: mỗi AI app một dòng màu — trạng thái (Working 8 s / Thinking / Idle), mục tiêu và danh sách bước
-  (AI gọi `t3lab_narrate`), việc đang chạy, 6 bước gần nhất (ok / failed / paused, số element thay đổi).
+- **Thanh (bar)**: mỗi AI app một dòng màu — trạng thái, mục tiêu và danh sách bước (AI gọi `t3lab_narrate`), việc đang
+  chạy, 6 bước gần nhất (ok / failed / paused / not run, số element thay đổi). Trạng thái:
+  *In line · 1 ahead* (đang xếp hàng sau AI khác, dải vàng ghi "after Claude Code") · *Waiting for Revit* (tới lượt nhưng
+  Revit đang bận dialog / edit mode) · *Working 8 s* · *Thinking ···* (vừa xong một bước, đang chờ model, 20 s) ·
+  *Idle · last step 3 min ago*.
+- **Mỗi chat một agent**: hai cửa sổ Claude Code là "Claude Code" và "Claude Code 2", hai màu, hai con trỏ.
 - **Pause**: mọi tool thay đổi model hoặc ghi file bị từ chối tới khi bấm Resume; tool đọc vẫn chạy.
 - **Show on the model**: con trỏ của từng AI lướt tới element nó đọc/tạo/sửa trên mọi view đang mở, khung màu theo
   loại việc (xanh lá = tạo, cam = sửa, đỏ đứt nét = xoá); **Follow** zoom Revit theo AI.
+  - Tag con trỏ nền pastel + chữ đậm màu (dễ đọc trên view trắng), ghi **thứ vừa làm**: "Claude · Wall 3450 × 200",
+    "Door 0915 x 2134mm", "Wall ×3"; trong lúc chạy ghi việc đang làm, giữa hai bước ghi "thinking ···".
+  - **Vẽ theo (draw-along)**: tường, trục, dầm, line mới tạo → con trỏ chạy dọc từ đầu tới cuối từng cái trên view
+    đang mở, kèm một vệt màu.
+  - Hai AI cùng trỏ một chỗ thì đứng lệch nhau, không đè lên nhau.
 - **Select changes**: chọn (và zoom) mọi element AI đã tạo/sửa trong model này. Thay đổi lấy từ sự kiện
   `DocumentChanged` của Revit, nên đúng cả khi tool không trả id.
+
+## Nhiều AI cùng lúc · tuỳ chọn bridge
+
+Revit chỉ chạy một lời gọi một lúc. Add-in xếp hàng công bằng (`Conductor.cs`): người đang chat trước bot, rồi xoay vòng
+theo từng agent (một agent gọi dồn dập không chặn agent khác). Lời gọi chờ quá hạn (`queue_wait_s`, mặc định 45 s) thì
+**không chạy** và trả về `{"error_code": "revit_busy", "nothing_ran": true, "retry_after_s": …, "running": {...}}` — không
+còn chuyện "ghi ma" (model đổi sau khi AI đã bỏ cuộc). `health` / nút Status cho thấy ai đang giữ Revit và bao nhiêu
+lời gọi đang chờ.
+
+Tuỳ chọn thêm vào `args` của server `t3lab-revit` trong config AI app (hoặc biến môi trường):
+
+| Tuỳ chọn | Biến | Việc |
+|---|---|---|
+| `--tier=read` · `trusted` · `experimental` | `T3LAB_TIER` | `read`: chỉ tool đọc · `trusted`: thêm tool sửa model / ghi file · `experimental` (mặc định): thêm `send_code_to_revit`. Tool vượt tier bị ẩn và bị từ chối (`tier_denied`) trước khi tới Revit |
+| `--deny=a,b` | `T3LAB_DENY` | Tắt vài tool cho client này (`tool_denied`) |
+| `--agent=<tên>` | `T3LAB_AGENT` | Tên hiện trên Agent Cursors (mặc định: tên app) |
+| `--lane=person` · `task` · `auto` | `T3LAB_LANE` | Thứ tự hàng đợi (bot tự chạy: `auto`). Chỉ xếp thứ tự, không cấp quyền |
+| `--queue-wait=45` | `T3LAB_QUEUE_WAIT_S` | Thời gian chờ tối đa (giây) để tới lượt |
+| `--audit=0` | `T3LAB_AUDIT=0` | Tắt nhật ký `%APPDATA%\T3LabRevitMCP\audit\<ngày>.jsonl` (mỗi lời gọi một dòng: agent, tool, ok / error_code, thời gian; không ghi tham số) |
 
 ## Tool (63)
 
@@ -146,8 +176,9 @@ Test (không cần Revit): `python -I tests/smoke_bridge.py` · `python -I tests
 
 | Triệu chứng | Xử lý |
 |---|---|
-| AI báo *Revit … is not reachable* | Mở Revit; tab **T3Lab MCP → Status** phải báo *listening on 127.0.0.1:489xx*. Không thấy tab → chạy `-Check` |
-| Không thấy tab T3Lab MCP | Revit 2026+: lúc mở Revit chọn **Always Load**. Kiểm tra `%APPDATA%\Autodesk\Revit\Addins\<năm>\T3LabRevit.addin` |
+| AI báo *Revit … is not reachable* | Mở Revit; **Add-Ins → T3Lab MCP → Status** phải báo *listening on 127.0.0.1:489xx*. Không thấy panel → chạy `-Check` |
+| Không thấy panel T3Lab MCP trong tab Add-Ins | Revit 2026+: lúc mở Revit chọn **Always Load**. Kiểm tra `%APPDATA%\Autodesk\Revit\Addins\<năm>\T3LabRevit.addin` |
+| AI báo `revit_busy` | AI khác đang dùng Revit (xem `running`), hoặc Revit đang mở dialog / edit mode. Không có gì chạy; AI thử lại sau `retry_after_s` |
 | AI app không thấy server | Thoát hẳn AI app rồi mở lại (Claude Desktop: tray icon → Quit). Chạy `-Check` để xem app nào đã đăng ký |
 | Tool trả *Revit did not respond within 60s* | Revit đang mở dialog / đang ở chế độ edit (sketch, in-place) → đóng nó rồi thử lại. Không có gì bị thực thi |
 | Cần log | `%APPDATA%\T3LabRevitMCP\logs\t3labrevit.log` (nút **Status → Open the log folder**) |

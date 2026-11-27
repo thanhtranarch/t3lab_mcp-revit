@@ -7,7 +7,7 @@ using Autodesk.Revit.UI;
 
 namespace T3LabRevit.Loader
 {
-    /// <summary>Entry point Revit calls through T3LabRevit.addin: starts the MCP server and adds the T3Lab MCP ribbon tab.</summary>
+    /// <summary>Entry point Revit calls through T3LabRevit.addin: starts the MCP server and adds the T3Lab MCP panel to the Add-Ins tab.</summary>
     public sealed class LoaderApp : IExternalApplication
     {
         public Result OnStartup(UIControlledApplication application)
@@ -19,7 +19,7 @@ namespace T3LabRevit.Loader
                 catch (Exception ex) { Settings.StartError = CoreHost.Unwrap(ex).Message; }
             }
             try { T3Ribbon.Create(application); }
-            catch (Exception) { /* the server still runs; the tab is a convenience */ }
+            catch (Exception) { /* the server still runs; the panel is a convenience */ }
             return Result.Succeeded;
         }
 

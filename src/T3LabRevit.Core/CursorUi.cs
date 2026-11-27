@@ -33,15 +33,25 @@ namespace T3LabRevit.Core
             public bool Deleted;
         }
 
+        /// <summary>A curve the cursor draws along (screen px, physical), start to end.</summary>
+        internal sealed class Seg
+        {
+            public readonly List<Point> Points = new List<Point>();
+        }
+
         internal sealed class Frame
         {
-            public string Agent, Caption;
+            public string Agent, Caption, Subject;     // Subject: what was made ("Wall 3450 × 200"), null = say the Caption
             public Color Color;
             public ActionKind Action;
             public bool Failed, Change;
             public readonly List<Rect> Views = new List<Rect>();
             public readonly List<Box> Boxes = new List<Box>();
+            public readonly List<Seg> Path = new List<Seg>();
         }
+
+        /// <summary>What a cursor's tag says between frames: the running call, the result, thinking dots, done.</summary>
+        internal enum PointerMode { Working, Done, Finished }
 
         static Dispatcher _ui;
         static Hud _hud;
@@ -71,6 +81,12 @@ namespace T3LabRevit.Core
             var thread = new Thread(() =>
             {
                 _ui = Dispatcher.CurrentDispatcher;
+                // an exception on this thread (a timer, a layout pass) would end Revit: log it and keep the thread
+                _ui.UnhandledException += (s, e) =>
+                {
+                    Log.Error("agent cursors ui: " + e.Exception);
+                    e.Handled = true;
+                };
                 ready.Set();
                 Dispatcher.Run();
             }) { IsBackground = true, Name = "T3Lab Agent Cursors" };
@@ -93,6 +109,9 @@ namespace T3LabRevit.Core
             if (_overlay == null) _overlay = new Overlay();
             _overlay.Show(frame);
         });
+
+        /// <summary>Retag an agent's cursor that is already on screen (no cursor is created here: it has no place yet).</summary>
+        public static void PointerState(string agent, PointerMode mode, string text) => Post(() => _overlay?.SetState(agent, mode, text));
 
         public static void ClearModel() => Post(() => _overlay?.Clear());
 
@@ -142,6 +161,13 @@ namespace T3LabRevit.Core
                 default: return AgentCursors.Rgb(0x0D, 0x99, 0xFF);
             }
         }
+
+        /// <summary>Tag ink on a pastel wash: 10:1 or better on every palette colour (white on the solid colour was ~3:1).</summary>
+        internal static readonly Color Ink = AgentCursors.Rgb(0x1F, 0x29, 0x37);
+
+        /// <summary>The colour mixed into white: amount 0 = white, 1 = the colour.</summary>
+        internal static Color Pastel(Color c, double amount = 0.2) => Color.FromRgb(
+            (byte)Math.Round(255 + (c.R - 255) * amount), (byte)Math.Round(255 + (c.G - 255) * amount), (byte)Math.Round(255 + (c.B - 255) * amount));
 
         internal static SolidColorBrush B(Color c, byte alpha = 255)
         {
@@ -287,7 +313,11 @@ namespace T3LabRevit.Core
                 };
 
                 _tick = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-                _tick.Tick += (s, e) => OnTick();
+                _tick.Tick += (s, e) =>
+                {
+                    try { OnTick(); }
+                    catch (Exception ex) { Log.Error("agent cursors bar tick: " + ex.Message); }
+                };
                 _tick.Start();
             }
 
@@ -334,8 +364,17 @@ namespace T3LabRevit.Core
                     else if (front && _hiddenForFocus) { _hiddenForFocus = false; _win.Show(); }
                 }
                 if (_toast.Visibility == Visibility.Visible && DateTime.Now > _toastUntil) _toast.Visibility = Visibility.Collapsed;
-                if (_view.Agents.Any(a => a.Working)) Render();   // the seconds count
+                // the seconds count, "in line" -> "waiting for Revit", thinking -> idle: a fresh snapshot (plain data, short lock)
+                if (_view.Agents.Any(a => a.Working || a.State == AgentCursors.AgentState.Thinking))
+                {
+                    try { _view = AgentCursors.Snapshot(); }
+                    catch (Exception ex) { Log.Error("agent cursors snapshot: " + ex.Message); }
+                    Render();
+                }
+                else if (++_idleTicks % 10 == 0 && _view.Agents.Any(a => a.LastEnd.HasValue)) Render();   // "last step 3 min ago"
             }
+
+            int _idleTicks;
 
             public void SetView(AgentCursors.View view)
             {
@@ -371,11 +410,19 @@ namespace T3LabRevit.Core
             {
                 var panel = new StackPanel { Margin = new Thickness(0, 2, 0, 6) };
                 var row = new DockPanel();
-                var status = new TextBlock
+                int secs = Math.Max(0, (int)(DateTime.Now - a.NowStarted).TotalSeconds);
+                string statusText;
+                switch (a.State)
                 {
-                    Text = a.Working ? $"Working {Math.Max(0, (int)(DateTime.Now - a.NowStarted).TotalSeconds)} s" : a.Status,
-                    Foreground = a.Status == "Paused" ? Orange : Muted, FontSize = 11,
-                };
+                    case AgentCursors.AgentState.Working: statusText = $"Working {secs} s"; break;
+                    case AgentCursors.AgentState.Blocked: statusText = $"Waiting for Revit {secs} s"; break;
+                    case AgentCursors.AgentState.Thinking: statusText = "Thinking" + Dots(); break;
+                    case AgentCursors.AgentState.Idle:
+                        statusText = a.LastEnd.HasValue ? "Idle · last step " + AgentCursors.Ago(a.LastEnd.Value) : "Idle"; break;
+                    default: statusText = a.Status; break;
+                }
+                bool amber = a.State == AgentCursors.AgentState.Paused || a.State == AgentCursors.AgentState.Queued || a.State == AgentCursors.AgentState.Blocked;
+                var status = new TextBlock { Text = statusText, Foreground = amber ? Orange : Muted, FontSize = 11 };
                 DockPanel.SetDock(status, Dock.Right);
                 row.Children.Add(status);
                 var name = new StackPanel { Orientation = Orientation.Horizontal };
@@ -398,25 +445,46 @@ namespace T3LabRevit.Core
                 }
                 if (a.Working && !string.IsNullOrEmpty(a.Now))
                 {
-                    var now = new Border
+                    // the band: the action's colour while it runs; amber while it waits its turn or for Revit
+                    bool waits = a.State == AgentCursors.AgentState.Queued || a.State == AgentCursors.AgentState.Blocked;
+                    Color c = waits ? AgentCursors.Rgb(0xE0, 0x8E, 0x00) : ActionColor(a.NowAction);
+                    var text = new TextBlock { TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap };
+                    text.Inlines.Add(new System.Windows.Documents.Run(a.Now));
+                    string why = a.State == AgentCursors.AgentState.Queued
+                        ? (a.Behind != null ? "after " + a.Behind : "waiting its turn") + (a.Ahead > 0 ? $", {a.Ahead} more ahead" : "")
+                        : a.State == AgentCursors.AgentState.Blocked ? "Revit is busy: a dialog, an edit mode or a long operation" : null;
+                    var band = new StackPanel();
+                    band.Children.Add(text);
+                    if (why != null) band.Children.Add(new TextBlock { Text = why, Foreground = Muted, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis });
+                    panel.Children.Add(new Border
                     {
-                        Background = B(ActionColor(a.NowAction), 0x26), BorderBrush = B(ActionColor(a.NowAction)), BorderThickness = new Thickness(3, 0, 0, 0),
-                        Padding = new Thickness(6, 3, 6, 3), Margin = new Thickness(16, 4, 0, 0),
-                        Child = new TextBlock { Text = a.Now, TextTrimming = TextTrimming.CharacterEllipsis },
-                    };
-                    panel.Children.Add(now);
+                        Background = B(c, 0x26), BorderBrush = B(c), BorderThickness = new Thickness(3, 0, 0, 0),
+                        Padding = new Thickness(6, 3, 6, 3), Margin = new Thickness(16, 4, 0, 0), Child = band,
+                    });
+                }
+                else if (a.State == AgentCursors.AgentState.Thinking)
+                {
+                    panel.Children.Add(new TextBlock
+                    {
+                        Text = "Waiting for the model" + Dots(), Foreground = Muted, FontSize = 11, FontStyle = FontStyles.Italic,
+                        Margin = new Thickness(16, 2, 0, 0),
+                    });
                 }
                 return panel;
             }
 
+            static string Dots() => new string('·', 1 + (int)(DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond / 500 % 3));
+
             UIElement StepRow(AgentCursors.StepView s)
             {
                 var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1), ToolTip = s.Error ?? s.Caption };
-                string state = s.State == StepState.Ok ? "ok" : s.State == StepState.Refused ? "paused" : s.State == StepState.Failed ? "failed" : "…";
+                string state = s.State == StepState.Ok ? "ok" : s.State == StepState.Refused ? "paused" : s.State == StepState.Busy ? "not run"
+                    : s.State == StepState.Failed ? "failed" : "…";
                 var right = new TextBlock
                 {
                     Text = (s.Changed > 0 ? s.Changed + " · " : "") + state,
-                    Foreground = s.State == StepState.Failed ? Hex(0xFFE5484D) : s.State == StepState.Refused ? Orange : Muted, FontSize = 11,
+                    Foreground = s.State == StepState.Failed ? Hex(0xFFE5484D) : s.State == StepState.Refused || s.State == StepState.Busy ? Orange : Muted,
+                    FontSize = 11,
                 };
                 DockPanel.SetDock(right, Dock.Right);
                 row.Children.Add(right);
@@ -433,7 +501,8 @@ namespace T3LabRevit.Core
 
         sealed class Overlay
         {
-            const double MoveMs = 650, BoxHoldS = 3.5, IdleHideS = 12;
+            const double MoveMs = 650, HopMs = 380, BoxHoldS = 3.5, ThinkAfterS = 2.5, IdleHideS = AgentCursors.ThinkS + 10;
+            const double DrawSpeed = 0.9;   // DIP per ms while drawing along a new element
             readonly Window _win;
             readonly Canvas _canvas = new Canvas();
             readonly Dictionary<string, Pointer> _pointers = new Dictionary<string, Pointer>();
@@ -444,10 +513,13 @@ namespace T3LabRevit.Core
             sealed class Pointer
             {
                 public Canvas Root;
-                public TextBlock Caption;
+                public TextBlock Name, Caption;
                 public Border Tag;
                 public double X, Y;
-                public DateTime Seen;
+                public int Slot;
+                public DateTime Seen, ModeSince;
+                public PointerMode Mode = PointerMode.Done;
+                public string Text = "";
             }
 
             public Overlay()
@@ -460,7 +532,11 @@ namespace T3LabRevit.Core
                 };
                 _win.SourceInitialized += (s, e) => Native.AddExStyle(_win, Native.WS_EX_TRANSPARENT | Native.WS_EX_LAYERED | Native.WS_EX_TOOLWINDOW | Native.WS_EX_NOACTIVATE);
                 _tick = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-                _tick.Tick += (s, e) => OnTick();
+                _tick.Tick += (s, e) =>
+                {
+                    try { OnTick(); }
+                    catch (Exception ex) { Log.Error("agent cursors overlay tick: " + ex.Message); }
+                };
                 _tick.Start();
             }
 
@@ -484,24 +560,46 @@ namespace T3LabRevit.Core
                 Place();
                 if (!_win.IsVisible && Native.RevitInFront()) _win.Show();
                 Color ac = f.Failed ? AgentCursors.Rgb(0xE5, 0x48, 0x4D) : ActionColor(f.Action);
-                foreach (Box b in f.Boxes) AddBox(b, ac, f.Change || b.Deleted);
+                Pointer p = PointerFor(f.Agent, f.Color, f.Path.Count > 0 || f.Boxes.Count > 0 || f.Views.Count > 0);
+                if (p == null) return;
+                SetText(p, PointerMode.Done, f.Subject ?? f.Caption);
 
-                // the cursor goes to the first thing it touched, else into the view next to where it was
+                double hold = BoxHoldS;
+                if (f.Path.Count > 0) hold += DrawAlong(p, f.Path, f.Color) / 1000.0;
+                foreach (Box b in f.Boxes) AddBox(b, ac, f.Change || b.Deleted, hold);
+                if (f.Path.Count > 0) return;
+
+                // the cursor goes to the first thing it touched, else into the view; agents on one spot sit side by side
                 double tx, ty;
                 Box first = f.Boxes.FirstOrDefault(b => !b.Deleted) ?? f.Boxes.FirstOrDefault();
                 if (first != null) { tx = X((first.L + first.R) / 2); ty = Y((first.T + first.B) / 2); }
                 else if (f.Views.Count > 0)
                 {
                     Rect v = f.Views[0];
-                    int n = _pointers.Count;
-                    tx = X(v.L + (v.R - v.L) * (0.35 + 0.1 * (n % 3)));
+                    tx = X(v.L + (v.R - v.L) * (0.35 + 0.1 * (p.Slot % 3)));
                     ty = Y(v.T + (v.B - v.T) * 0.4);
                 }
                 else return;
-                MovePointer(f.Agent, f.Color, f.Caption, tx, ty);
+                Glide(p, tx + (p.Slot % 4) * 14, ty + (p.Slot % 4) * 10);
             }
 
-            void AddBox(Box b, Color c, bool strong)
+            public void SetState(string agent, PointerMode mode, string text)
+            {
+                if (agent == null || !_pointers.TryGetValue(agent, out Pointer p)) return;
+                SetText(p, mode, text);
+            }
+
+            void SetText(Pointer p, PointerMode mode, string text)
+            {
+                p.Mode = mode;
+                p.Text = text ?? "";
+                p.ModeSince = p.Seen = DateTime.Now;
+                p.Caption.Text = p.Text;
+                p.Root.BeginAnimation(UIElement.OpacityProperty, null);
+                p.Root.Opacity = 1;
+            }
+
+            void AddBox(Box b, Color c, bool strong, double holdS)
             {
                 double l = X(b.L), t = Y(b.T), w = Math.Max(6, X(b.R) - l), h = Math.Max(6, Y(b.B) - t);
                 var rect = new Rectangle
@@ -515,14 +613,15 @@ namespace T3LabRevit.Core
                 _canvas.Children.Add(rect);
                 var chip = new Border
                 {
-                    Background = B(c), CornerRadius = new CornerRadius(2), Padding = new Thickness(4, 0, 4, 1),
-                    Child = new TextBlock { Text = b.Label, Foreground = Brushes.White, FontSize = 10, FontFamily = new FontFamily("Segoe UI") },
+                    Background = B(Pastel(c, 0.22)), BorderBrush = B(c), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(2),
+                    Padding = new Thickness(4, 0, 4, 1),
+                    Child = new TextBlock { Text = b.Label, Foreground = B(Ink), FontSize = 11, FontFamily = new FontFamily("Segoe UI") },
                 };
                 Canvas.SetLeft(chip, l - 4);
-                Canvas.SetTop(chip, Math.Max(0, t - 20));
+                Canvas.SetTop(chip, Math.Max(0, t - 21));
                 _canvas.Children.Add(chip);
-                FadeOut(rect, BoxHoldS);
-                FadeOut(chip, BoxHoldS);
+                FadeOut(rect, holdS);
+                FadeOut(chip, holdS);
             }
 
             void FadeOut(UIElement e, double afterS)
@@ -532,34 +631,43 @@ namespace T3LabRevit.Core
                 e.BeginAnimation(UIElement.OpacityProperty, anim);
             }
 
-            void MovePointer(string agent, Color color, string caption, double x, double y)
+            /// <summary>The agent's cursor: a filled arrow + a pastel tag (agent colour at 20 % on white, 1 px border, dark ink).</summary>
+            Pointer PointerFor(string agent, Color color, bool create)
             {
-                if (!_pointers.TryGetValue(agent, out Pointer p))
+                if (_pointers.TryGetValue(agent, out Pointer p)) return p;
+                if (!create) return null;
+                p = new Pointer { Root = new Canvas { IsHitTestVisible = false }, Slot = _pointers.Count };
+                var arrow = new Path
                 {
-                    p = new Pointer { Root = new Canvas { IsHitTestVisible = false }, X = x - 60, Y = y - 60 };
-                    var arrow = new Path
-                    {
-                        Data = Geometry.Parse("M0,0 L0,18 L4.8,13.8 L8.2,21 L11,19.8 L7.6,12.8 L14,12.8 Z"),
-                        Fill = B(color), Stroke = Brushes.White, StrokeThickness = 1.5, StrokeLineJoin = PenLineJoin.Round,
-                    };
-                    p.Caption = new TextBlock { Foreground = Brushes.White, FontSize = 11, FontFamily = new FontFamily("Segoe UI") };
-                    var label = new StackPanel { Orientation = Orientation.Horizontal };
-                    label.Children.Add(new TextBlock { Text = agent + "  ", Foreground = Brushes.White, FontSize = 11, FontWeight = FontWeights.SemiBold, FontFamily = new FontFamily("Segoe UI") });
-                    label.Children.Add(p.Caption);
-                    p.Tag = new Border { Background = B(color), CornerRadius = new CornerRadius(8), Padding = new Thickness(7, 2, 8, 3), Child = label, MaxWidth = 340 };
-                    Canvas.SetLeft(p.Tag, 16);
-                    Canvas.SetTop(p.Tag, 18);
-                    p.Root.Children.Add(arrow);
-                    p.Root.Children.Add(p.Tag);
-                    Canvas.SetLeft(p.Root, p.X);
-                    Canvas.SetTop(p.Root, p.Y);
-                    _canvas.Children.Add(p.Root);
-                    _pointers[agent] = p;
-                }
-                p.Caption.Text = caption ?? "";
-                p.Seen = DateTime.Now;
-                p.Root.BeginAnimation(UIElement.OpacityProperty, null);
-                p.Root.Opacity = 1;
+                    Data = Geometry.Parse("M0,0 L0,18 L4.8,13.8 L8.2,21 L11,19.8 L7.6,12.8 L14,12.8 Z"),
+                    Fill = B(color), Stroke = Brushes.White, StrokeThickness = 1.5, StrokeLineJoin = PenLineJoin.Round,
+                };
+                p.Name = new TextBlock { Text = agent, Foreground = B(Ink), FontSize = 11, FontWeight = FontWeights.SemiBold, FontFamily = new FontFamily("Segoe UI") };
+                p.Caption = new TextBlock { Foreground = B(Ink), FontSize = 11, FontFamily = new FontFamily("Segoe UI"), Margin = new Thickness(6, 0, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis };
+                var label = new StackPanel { Orientation = Orientation.Horizontal };
+                label.Children.Add(p.Name);
+                label.Children.Add(p.Caption);
+                p.Tag = new Border
+                {
+                    Background = B(Pastel(color)), BorderBrush = B(color), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(7, 2, 8, 3), Child = label, MaxWidth = 340,
+                };
+                Canvas.SetLeft(p.Tag, 16);
+                Canvas.SetTop(p.Tag, 18);
+                p.Root.Children.Add(arrow);
+                p.Root.Children.Add(p.Tag);
+                // a new cursor fades in where its first move starts (the view's top left area, by slot)
+                p.X = 60 + p.Slot * 18;
+                p.Y = 80 + p.Slot * 14;
+                Canvas.SetLeft(p.Root, p.X);
+                Canvas.SetTop(p.Root, p.Y);
+                _canvas.Children.Add(p.Root);
+                _pointers[agent] = p;
+                return p;
+            }
+
+            void Glide(Pointer p, double x, double y)
+            {
                 var ease = new CubicEase { EasingMode = EasingMode.EaseInOut };
                 var dur = TimeSpan.FromMilliseconds(MoveMs);
                 p.Root.BeginAnimation(Canvas.LeftProperty, new DoubleAnimation(p.X, x, dur) { EasingFunction = ease });
@@ -568,16 +676,75 @@ namespace T3LabRevit.Core
                 p.Y = y;
             }
 
+            /// <summary>Hop to each new curve's start, then draw along it while a line grows behind the tip. Returns the duration (ms).</summary>
+            double DrawAlong(Pointer p, List<Seg> path, Color color)
+            {
+                var kx = new DoubleAnimationUsingKeyFrames();
+                var ky = new DoubleAnimationUsingKeyFrames();
+                kx.KeyFrames.Add(new DiscreteDoubleKeyFrame(p.X, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+                ky.KeyFrames.Add(new DiscreteDoubleKeyFrame(p.Y, KeyTime.FromTimeSpan(TimeSpan.Zero)));
+                double t = 0, x = p.X, y = p.Y;
+                var ease = new CubicEase { EasingMode = EasingMode.EaseInOut };
+                bool firstHop = true;
+                foreach (Seg seg in path)
+                {
+                    Point a = new Point(X(seg.Points[0].X), Y(seg.Points[0].Y));
+                    t += firstHop ? MoveMs : HopMs;
+                    firstHop = false;
+                    kx.KeyFrames.Add(new EasingDoubleKeyFrame(a.X, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t)), ease));
+                    ky.KeyFrames.Add(new EasingDoubleKeyFrame(a.Y, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t)), ease));
+                    x = a.X;
+                    y = a.Y;
+                    foreach (Point raw in seg.Points.Skip(1))
+                    {
+                        var b = new Point(X(raw.X), Y(raw.Y));
+                        double ms = Math.Max(60, Math.Min(900, (b - new Point(x, y)).Length / DrawSpeed));
+                        Trail(x, y, b.X, b.Y, t, ms, color);
+                        t += ms;
+                        kx.KeyFrames.Add(new LinearDoubleKeyFrame(b.X, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t))));
+                        ky.KeyFrames.Add(new LinearDoubleKeyFrame(b.Y, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t))));
+                        x = b.X;
+                        y = b.Y;
+                    }
+                }
+                p.Root.BeginAnimation(Canvas.LeftProperty, kx);
+                p.Root.BeginAnimation(Canvas.TopProperty, ky);
+                p.X = x;
+                p.Y = y;
+                return t;
+            }
+
+            void Trail(double x1, double y1, double x2, double y2, double beginMs, double ms, Color color)
+            {
+                var line = new Line
+                {
+                    X1 = x1, Y1 = y1, X2 = x1, Y2 = y1, Stroke = B(color), StrokeThickness = 3, Opacity = 0.85,
+                    StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round,
+                };
+                _canvas.Children.Insert(0, line);   // under the cursors
+                var begin = TimeSpan.FromMilliseconds(beginMs);
+                var dur = TimeSpan.FromMilliseconds(ms);
+                line.BeginAnimation(Line.X2Property, new DoubleAnimation(x1, x2, dur) { BeginTime = begin, FillBehavior = FillBehavior.HoldEnd });
+                line.BeginAnimation(Line.Y2Property, new DoubleAnimation(y1, y2, dur) { BeginTime = begin, FillBehavior = FillBehavior.HoldEnd });
+                var fade = new DoubleAnimation(0.85, 0, TimeSpan.FromMilliseconds(600)) { BeginTime = begin + dur + TimeSpan.FromSeconds(BoxHoldS) };
+                fade.Completed += (s, a) => _canvas.Children.Remove(line);
+                line.BeginAnimation(UIElement.OpacityProperty, fade);
+            }
+
             void OnTick()
             {
                 bool front = Native.RevitInFront();
                 if (!front && _win.IsVisible) { _win.Hide(); _hiddenForFocus = true; }
                 else if (front && _hiddenForFocus) { _hiddenForFocus = false; Place(); _win.Show(); }
-                foreach (var kv in _pointers.ToList())
+                DateTime now = DateTime.Now;
+                foreach (Pointer p in _pointers.Values)
                 {
-                    Pointer p = kv.Value;
-                    if ((DateTime.Now - p.Seen).TotalSeconds > IdleHideS && p.Root.Opacity > 0.99)
-                        p.Root.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(800)));
+                    double since = (now - p.ModeSince).TotalSeconds;
+                    // between calls the tag says the agent is thinking (waiting for its model), like the bar
+                    if (p.Mode == PointerMode.Done && since > ThinkAfterS)
+                        p.Caption.Text = since < AgentCursors.ThinkS ? "thinking " + new string('·', 1 + (int)(since * 2) % 3) : "";
+                    if (p.Mode != PointerMode.Working && (now - p.Seen).TotalSeconds > IdleHideS && p.Root.Opacity > 0.99)
+                        p.Root.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(800)) { FillBehavior = FillBehavior.HoldEnd });
                 }
             }
 

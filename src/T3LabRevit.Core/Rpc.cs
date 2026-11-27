@@ -30,7 +30,10 @@ namespace T3LabRevit.Core
                 {
                     case "health": result = Health(); break;
                     case "tools/list": result = Registry.ListJson(); break;
-                    case "tools/call": result = CallTool(p.ReqStr("name"), new Args(p.Raw("arguments")), AgentCursors.ClientName(p.Raw("client"))); break;
+                    case "tools/call":
+                        result = CallTool(p.ReqStr("name"), new Args(p.Raw("arguments")), AgentCursors.ClientKey(p.Raw("client")),
+                            p.Str("lane"), p.Num("queue_wait_s", 0));
+                        break;
                     default: return Error(id, -32601, "Unknown method: " + method);
                 }
                 return Json.Write(new Dictionary<string, object> { ["id"] = id, ["result"] = result });
@@ -59,9 +62,23 @@ namespace T3LabRevit.Core
             ["revit"] = Entry.RevitVersion,
             ["active_document"] = Entry.ActiveDocument,
             ["calls"] = Interlocked.Read(ref Entry.CallCount),
+            ["queue"] = QueueStatus(),
         };
 
-        static object CallTool(string name, Args args, string client)
+        /// <summary>Conductor status with display names ("Claude Code"), never the bridge session ids.</summary>
+        static Dictionary<string, object> QueueStatus()
+        {
+            Dictionary<string, object> q = Entry.Queue.Status();
+            if (q.TryGetValue("agent", out object a)) q["agent"] = AgentCursors.Label(a as string);
+            if (q.TryGetValue("waiting_agents", out object w) && w is List<object> list)
+                q["waiting_agents"] = list.Select(x => (object)AgentCursors.Label(x as string)).Distinct().ToList();
+            return q;
+        }
+
+        /// <summary>No deadline from the bridge (older bridge, direct client): a call waits at most this long for its turn.</summary>
+        const int DefaultQueueWaitMs = 60000, MaxQueueWaitMs = 30 * 60 * 1000;
+
+        static object CallTool(string name, Args args, string client, string lane, double queueWaitS)
         {
             ToolDef def = Registry.Get(name);
             if (def == null) return ErrorResult($"Unknown tool '{name}'. Call tools/list (or get_revit_context) to see the tools.");
@@ -72,9 +89,10 @@ namespace T3LabRevit.Core
             AgentStep step = null;
             try { step = AgentCursors.Begin(def, args, client); }
             catch (Exception ex) { Log.Error("agent cursors: " + ex.Message); }
-            bool ok = false, refused = false;
+            bool ok = false, refused = false, busy = false;
             string error = null;
             object value = null;
+            int deadlineMs = queueWaitS > 0 ? (int)Math.Min(queueWaitS * 1000, MaxQueueWaitMs) : DefaultQueueWaitMs;
             try
             {
                 if (AgentCursors.Blocks(def, args))
@@ -88,21 +106,54 @@ namespace T3LabRevit.Core
                 }
                 else
                 {
-                    value = Entry.Main.Run(app =>
+                    // one call at a time, in a fair order; a call that cannot start in time never runs (Conductor)
+                    using (Conductor.Ticket ticket = Entry.Queue.Enter(client, name, lane, deadlineMs,
+                               (ahead, running) => AgentCursors.Queued(step, ahead, running)))
                     {
-                        // Pause pressed while this call waited for Revit
-                        if (AgentCursors.Blocks(def, args))
+                        AgentCursors.Granted(step);
+                        MainThread main = Entry.Main ?? throw new ToolError("The T3Lab Revit MCP server is stopping. Nothing was run; retry in a moment.");
+                        // Revit must start it within what is left of the deadline, or it never runs (no late "ghost write")
+                        int startMs = Math.Max(5000, deadlineMs - (int)sw.ElapsedMilliseconds);
+                        value = main.Run(app =>
                         {
-                            refused = true;
-                            throw new ToolError(AgentCursors.PausedMessage);
-                        }
-                        AgentCursors.StartCapture(step, def, app);
-                        try { return Execute(def, args, app); }
-                        finally { AgentCursors.EndCapture(step); }
-                    });
+                            ticket.MarkRunning();
+                            AgentCursors.OnMain(step);
+                            // Pause pressed while this call waited for Revit
+                            if (AgentCursors.Blocks(def, args))
+                            {
+                                refused = true;
+                                throw new ToolError(AgentCursors.PausedMessage);
+                            }
+                            AgentCursors.StartCapture(step, def, app);
+                            try { return Execute(def, args, app); }
+                            finally { AgentCursors.EndCapture(step); }
+                        }, startMs);
+                    }
                 }
                 ok = true;
                 return Success(value);
+            }
+            catch (Conductor.BusyException be)
+            {
+                busy = true;
+                outcome = "busy: " + be.Message;
+                error = "Not run, Revit was busy: " + be.Message;
+                return BusyResult(be, deadlineMs / 1000.0);
+            }
+            catch (MainThread.NotStartedException ns)
+            {
+                busy = true;
+                outcome = "not started: " + ns.Message;
+                error = ns.Message;
+                return Coded("revit_busy", ns.Message, true,
+                    "Ask the user to finish or cancel what is open in Revit (a dialog, an edit mode), then retry.", 10);
+            }
+            catch (ToolError te) when (refused)
+            {
+                outcome = "paused";
+                error = te.Message;
+                return Coded("paused_by_user", te.Message, true,
+                    "Do read-only work meanwhile, or ask the user to press Resume on the T3Lab Agent Cursors bar.");
             }
             catch (ToolError te)
             {
@@ -127,9 +178,54 @@ namespace T3LabRevit.Core
             {
                 Entry.LastCall = $"{name} ({sw.ElapsedMilliseconds} ms)";
                 Log.Info($"{name} {sw.ElapsedMilliseconds}ms {outcome}");
-                try { AgentCursors.End(step, ok, refused, error, value); }
+                try { AgentCursors.End(step, ok, refused, busy, error, value); }
                 catch (Exception ex) { Log.Error("agent cursors: " + ex.Message); }
             }
+        }
+
+        /// <summary>A call that never got its turn: what holds Revit, and when to try again. Nothing ran.</summary>
+        static object BusyResult(Conductor.BusyException be, double waitedS)
+        {
+            string who = be.Agent == null ? null : AgentCursors.Label(be.Agent);
+            string message = be.Agent == null
+                ? $"Revit did not get to this call within {waitedS:0} s. Nothing was run."
+                : be.Started
+                    ? $"Revit is busy with another AI call ({be.Tool} for {who}, {be.RunningS:0} s so far). Nothing was run."
+                    : $"Revit has not started the call ahead of this one ({be.Tool} for {who}): a dialog, an edit mode or a long " +
+                      "operation may be blocking Revit. Nothing was run.";
+            var d = new Dictionary<string, object>
+            {
+                ["error_code"] = "revit_busy",
+                ["message"] = message,
+                ["retryable"] = true,
+                ["nothing_ran"] = true,
+                ["retry_after_s"] = Math.Max(5, Math.Min(30, 5 + be.Ahead * 5)),
+                ["ahead"] = be.Ahead,
+                ["hint"] = be.Started || be.Agent == null
+                    ? "Do work that does not need Revit meanwhile (plan, read results you have), then retry after retry_after_s."
+                    : "Ask the user to finish or cancel what is open in Revit, then retry.",
+            };
+            if (be.Agent != null)
+                d["running"] = new Dictionary<string, object>
+                {
+                    ["agent"] = who, ["tool"] = be.Tool, ["running_s"] = be.RunningS, ["state"] = be.Started ? "running" : "waiting_for_revit",
+                };
+            return ErrorResult(Json.Write(d));
+        }
+
+        /// <summary>A refusal an agent can act on: {error_code, message, retryable, nothing_ran, hint}.</summary>
+        static object Coded(string code, string message, bool retryable, string hint, int retryAfterS = 0)
+        {
+            var d = new Dictionary<string, object>
+            {
+                ["error_code"] = code,
+                ["message"] = message,
+                ["retryable"] = retryable,
+                ["nothing_ran"] = true,
+                ["hint"] = hint,
+            };
+            if (retryAfterS > 0) d["retry_after_s"] = retryAfterS;
+            return ErrorResult(Json.Write(d));
         }
 
         static object Execute(ToolDef def, Args args, UIApplication app)

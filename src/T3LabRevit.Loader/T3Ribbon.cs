@@ -6,18 +6,18 @@ using Autodesk.Revit.UI;
 
 namespace T3LabRevit.Loader
 {
-    /// <summary>Tab "T3Lab MCP", panel "MCP Server". Icons are drawn in code (T3 Space Line: 2-unit outline on a 32 grid,
-    /// round caps, no fill, one orange detail), so the add-in ships no image files.</summary>
+    /// <summary>Panel "T3Lab MCP" on Revit's own Add-Ins tab (owner's request, 2026-11-27: no tab of our own). Icons are drawn in
+    /// code (T3 Space Line: 2-unit outline on a 32 grid, round caps, no fill, one orange detail), so the add-in ships no image files.</summary>
     internal static class T3Ribbon
     {
-        const string Tab = "T3Lab MCP";
+        internal const string PanelName = "T3Lab MCP";
         const string Orange = "#EA680C";
 
         internal static void Create(UIControlledApplication app)
         {
-            try { app.CreateRibbonTab(Tab); }
-            catch (Exception) { /* exists */ }
-            RibbonPanel panel = app.CreateRibbonPanel(Tab, "MCP Server");
+            foreach (RibbonPanel existing in app.GetRibbonPanels(Tab.AddIns))
+                if (existing.Name == PanelName) return;   // already built in this session
+            RibbonPanel panel = app.CreateRibbonPanel(Tab.AddIns, PanelName);
             string dll = typeof(T3Ribbon).Assembly.Location;
 
             Add(panel, dll, "t3mcp_startstop", "Start /\nStop", typeof(StartStopCommand),

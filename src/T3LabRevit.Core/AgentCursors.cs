@@ -13,7 +13,7 @@ namespace T3LabRevit.Core
     /// <summary>What kind of work a call does: picks the colour on the bar and on the model.</summary>
     internal enum ActionKind { Read, Create, Modify, Delete, File, View }
 
-    internal enum StepState { Running, Ok, Failed, Refused }
+    internal enum StepState { Running, Ok, Failed, Refused, Busy }
 
     /// <summary>One tool call as the Agent Cursors bar shows it.</summary>
     internal sealed class AgentStep
@@ -28,6 +28,11 @@ namespace T3LabRevit.Core
         public readonly List<long> Created = new List<long>(), Modified = new List<long>();
         public readonly List<BoundingBoxXYZ> DeletedBoxes = new List<BoundingBoxXYZ>(); // taken before the call ran
         public int DeletedCount;
+        // the fair queue (Conductor): in line, then holding the slot, then running on Revit's thread
+        public volatile bool Queued, OnMain;
+        public int Ahead;
+        public string Behind;
+        public DateTime Granted, RunStarted;
         public int Changed => Created.Count + Modified.Count + DeletedCount;
     }
 
@@ -41,6 +46,7 @@ namespace T3LabRevit.Core
         public bool PlanDone;
         public AgentStep Current;
         public DateTime LastSeen = DateTime.Now;
+        public DateTime? LastEnd;
         public int Calls, Changes;
     }
 
@@ -49,13 +55,15 @@ namespace T3LabRevit.Core
     /// feature of the same name). The bar (CursorUi.Hud) lists each agent, its goal and tasks (t3lab_narrate), what runs
     /// now and the last steps, with Pause; "Show on the model" also moves a cursor per agent over the Revit view and frames
     /// what a call created, changed or is about to delete. Changes are taken from Revit's DocumentChanged event.
-    /// Off by default (ribbon T3Lab MCP > Agent Cursors). Begin / End run on the socket thread and only record; every UI
+    /// Off by default (ribbon Add-Ins > T3Lab MCP > Agent Cursors). Begin / End run on the socket thread and only record; every UI
     /// update goes to the bar's own thread and can never fail a tool call.
     /// </summary>
     internal static class AgentCursors
     {
         public const string NarrateTool = "t3lab_narrate";
-        const int FeedSize = 20, PlanMax = 8, TaskMax = 60, GoalMax = 90, MaxCapture = 200, MaxTouched = 5000, MaxBoxes = 12;
+        const int FeedSize = 20, PlanMax = 8, TaskMax = 60, GoalMax = 90, MaxCapture = 200, MaxTouched = 5000, MaxBoxes = 12, MaxPath = 8;
+        /// <summary>After a call, the agent is "thinking" (waiting for its model) this long, then idle.</summary>
+        internal const double ThinkS = 20, BlockedAfterS = 2;
 
         static readonly object Gate = new object();
         static readonly Dictionary<string, AgentInfo> Agents = new Dictionary<string, AgentInfo>(StringComparer.OrdinalIgnoreCase);
@@ -145,6 +153,7 @@ namespace T3LabRevit.Core
             lock (Gate)
             {
                 Agents.Clear();
+                Retired.Clear();
                 Feed.Clear();
                 Touched.Clear();
             }
@@ -173,35 +182,79 @@ namespace T3LabRevit.Core
 
         internal static System.Windows.Media.Color Rgb(byte r, byte g, byte b) => System.Windows.Media.Color.FromRgb(r, g, b);
 
-        /// <summary>Display name and colour of an AI app from its MCP clientInfo.name.</summary>
-        static AgentInfo AgentFor(string rawName)
+        /// <summary>Display name and palette slot of an AI app from its MCP clientInfo.name.</summary>
+        static string Known(string rawName, out int slot)
         {
             string key = string.IsNullOrWhiteSpace(rawName) ? "ai" : rawName.Trim();
-            if (Agents.TryGetValue(key, out AgentInfo known)) return known;
             string lower = key.ToLowerInvariant();
-            string name;
-            System.Windows.Media.Color color;
-            if (lower.Contains("claude-code") || lower == "claude code") { name = "Claude Code"; color = Palette[0]; }
-            else if (lower.Contains("claude")) { name = "Claude"; color = Palette[0]; }
-            else if (lower.Contains("cursor")) { name = "Cursor"; color = Palette[3]; }
-            else if (lower.Contains("codex") || lower.Contains("openai") || lower.Contains("chatgpt")) { name = "ChatGPT"; color = Palette[2]; }
-            else if (lower.Contains("gemini") || lower.Contains("antigravity")) { name = "Gemini"; color = Palette[1]; }
-            else if (lower.Contains("copilot") || lower.Contains("vscode") || lower.Contains("visual studio")) { name = "Copilot"; color = Palette[5]; }
-            else if (lower.Contains("windsurf") || lower.Contains("cascade")) { name = "Windsurf"; color = Palette[4]; }
-            else if (key == "ai") { name = "AI"; color = Palette[1]; }
+            if (lower.Contains("claude-code") || lower == "claude code") { slot = 0; return "Claude Code"; }
+            if (lower.Contains("claude")) { slot = 0; return "Claude"; }
+            if (lower.Contains("cursor")) { slot = 3; return "Cursor"; }
+            if (lower.Contains("codex") || lower.Contains("openai") || lower.Contains("chatgpt")) { slot = 2; return "ChatGPT"; }
+            if (lower.Contains("gemini") || lower.Contains("antigravity")) { slot = 1; return "Gemini"; }
+            if (lower.Contains("copilot") || lower.Contains("vscode") || lower.Contains("visual studio")) { slot = 5; return "Copilot"; }
+            if (lower.Contains("windsurf") || lower.Contains("cascade")) { slot = 4; return "Windsurf"; }
+            slot = key == "ai" ? 1 : (key.GetHashCode() & 0x7FFFFFFF) % Palette.Length;
+            return key == "ai" ? "AI" : key.Length > 16 ? key.Substring(0, 16) : key;
+        }
+
+        /// <summary>
+        /// One agent per chat: the key is "name#session" (the bridge's process id). A second chat of the same app is
+        /// "Claude Code 2" in another colour, so two chats never share one cursor.
+        /// </summary>
+        static AgentInfo AgentFor(string clientKey)
+        {
+            string key = string.IsNullOrWhiteSpace(clientKey) ? "ai" : clientKey.Trim();
+            if (Agents.TryGetValue(key, out AgentInfo known)) return known;
+            string name = Known(BaseName(key), out int slot);
+            List<AgentInfo> same = Agents.Values.Where(a => Known(BaseName(a.Key), out int unused) == name).ToList();
+            // a new chat inherits the name and colour of a chat of the same app that went quiet (bridges restart: names must
+            // not climb to "7"); it starts with an empty plan, and the quiet one is retired, never shared by two live chats
+            AgentInfo quiet = same.FirstOrDefault(a => a.Current == null && (DateTime.Now - a.LastSeen).TotalMinutes > QuietMinutes);
+            AgentInfo info;
+            if (quiet != null)
+            {
+                Agents.Remove(quiet.Key);
+                Retired[quiet.Key] = quiet;
+                info = new AgentInfo { Key = key, Name = quiet.Name, Color = quiet.Color };
+            }
             else
             {
-                name = key.Length > 16 ? key.Substring(0, 16) : key;
-                color = Palette[(key.GetHashCode() & 0x7FFFFFFF) % Palette.Length];
+                int n = 1;
+                string label = name;
+                while (same.Any(a => a.Name == label)) label = name + " " + ++n;
+                info = new AgentInfo { Key = key, Name = label, Color = Palette[(slot + (n - 1) * 3) % Palette.Length] };
             }
-            var info = new AgentInfo { Key = key, Name = name, Color = color };
             Agents[key] = info;
             return info;
         }
 
-        public static string ClientName(object raw)
+        static IEnumerable<AgentInfo> AllAgents() => Agents.Values;
+
+        /// <summary>Agents a newer chat replaced: their steps in the feed keep their name and colour. A retired chat that comes back is a new agent.</summary>
+        static readonly Dictionary<string, AgentInfo> Retired = new Dictionary<string, AgentInfo>(StringComparer.OrdinalIgnoreCase);
+
+        const double QuietMinutes = 5;
+
+        static string BaseName(string key)
         {
-            if (raw is Dictionary<string, object> d) return new Args(d).Str("name");
+            int hash = key.LastIndexOf('#');
+            return hash > 0 ? key.Substring(0, hash) : key;
+        }
+
+        /// <summary>Who an agent is, for messages (no registration): "Claude Code".</summary>
+        public static string Label(string clientKey) => Known(BaseName(clientKey ?? "ai"), out int unused);
+
+        /// <summary>"claude-code#4812" from the bridge's client {name, version, session}.</summary>
+        public static string ClientKey(object raw)
+        {
+            if (raw is Dictionary<string, object> d)
+            {
+                var a = new Args(d);
+                string name = a.Str("name");
+                string session = a.Str("session");
+                return string.IsNullOrEmpty(session) ? name : (name ?? "ai") + "#" + session;
+            }
             return raw as string;
         }
 
@@ -218,16 +271,50 @@ namespace T3LabRevit.Core
                 Document = Entry.ActiveDocument,
             };
             AddIds(step.Named, args.Raw("element_ids"));
+            AgentInfo agent;
             lock (Gate)
             {
-                AgentInfo agent = AgentFor(client);
+                agent = AgentFor(client);
                 step.Agent = agent.Key;
                 agent.Current = step;
                 agent.LastSeen = DateTime.Now;
                 agent.Calls++;
             }
             Refresh(false);
+            if (ShowOnModel) CursorUi.PointerState(agent.Name, CursorUi.PointerMode.Working, step.Caption + "…");
             return step;
+        }
+
+        /// <summary>The call has to wait for its turn (Conductor, socket thread).</summary>
+        public static void Queued(AgentStep step, int ahead, string runningClient)
+        {
+            if (step == null) return;
+            step.Ahead = ahead;
+            step.Behind = runningClient == null ? null : NameOf(runningClient);
+            step.Queued = true;
+            Refresh(false);
+        }
+
+        /// <summary>The call holds Revit's slot; Revit may still be blocked by a dialog until OnMain.</summary>
+        public static void Granted(AgentStep step)
+        {
+            if (step == null) return;
+            step.Granted = DateTime.Now;
+            bool was = step.Queued;
+            step.Queued = false;
+            if (was) Refresh(false);
+        }
+
+        public static void OnMain(AgentStep step)
+        {
+            if (step == null) return;
+            step.RunStarted = DateTime.Now;
+            step.OnMain = true;
+        }
+
+        static string NameOf(string clientKey)
+        {
+            lock (Gate) return Agents.TryGetValue(clientKey, out AgentInfo a) ? a.Name : Label(clientKey);
         }
 
         static void AddIds(List<long> into, object raw)
@@ -278,11 +365,12 @@ namespace T3LabRevit.Core
             catch (Exception) { return def.Kind != ToolKind.Read; }
         }
 
-        public static void End(AgentStep step, bool ok, bool refused, string error, object result)
+        public static void End(AgentStep step, bool ok, bool refused, bool busy, string error, object result)
         {
             if (step == null) return;
             step.Seconds = (DateTime.Now - step.Started).TotalSeconds;
-            step.State = refused ? StepState.Refused : ok ? StepState.Ok : StepState.Failed;
+            step.State = busy ? StepState.Busy : refused ? StepState.Refused : ok ? StepState.Ok : StepState.Failed;
+            step.Queued = false;
             step.Error = error;
             if (ok && result != null) CollectResultIds(result, step.Named, 0);
             AgentInfo agent;
@@ -293,6 +381,7 @@ namespace T3LabRevit.Core
                 {
                     if (agent.Current == step) agent.Current = null;
                     agent.LastSeen = DateTime.Now;
+                    agent.LastEnd = DateTime.Now;
                     agent.Changes += step.Changed;
                 }
                 Feed.Insert(0, step);
@@ -306,14 +395,16 @@ namespace T3LabRevit.Core
                 }
             }
             Refresh(false);
-            if (ShowOnModel && agent != null && (step.State == StepState.Ok || step.DeletedBoxes.Count > 0))
-                Entry.Main?.Post(app => ShowOnModelNow(app, agent, step));
+            if (!ShowOnModel || agent == null) return;
+            if (step.State == StepState.Ok || step.DeletedBoxes.Count > 0) Entry.Main?.Post(app => ShowOnModelNow(app, agent, step));
+            else CursorUi.PointerState(agent.Name, CursorUi.PointerMode.Done, step.State == StepState.Busy ? "waiting for Revit" : step.State == StepState.Refused ? "paused" : "failed");
         }
 
         static bool IsChange(AgentStep s) => s.Action != ActionKind.Read && s.Action != ActionKind.View;
 
         public static void Narrate(string client, string goal, List<string> tasks, int step, bool done)
         {
+            string name;
             lock (Gate)
             {
                 AgentInfo agent = AgentFor(client);
@@ -327,8 +418,10 @@ namespace T3LabRevit.Core
                 if (step > 0) agent.Step = Math.Min(step, Math.Max(1, agent.Tasks.Count));
                 if (done) { agent.PlanDone = true; agent.Step = agent.Tasks.Count; }
                 agent.LastSeen = DateTime.Now;
+                name = agent.Name;
             }
             Refresh(false);
+            if (done && Enabled && ShowOnModel) CursorUi.PointerState(name, CursorUi.PointerMode.Finished, "done");
         }
 
         static string Clip(string s, int max) => s.Length <= max ? s : s.Substring(0, max - 1) + "…";
@@ -501,15 +594,19 @@ namespace T3LabRevit.Core
 
         // ---------------------------------------------------------------- snapshot for the bar
 
+        internal enum AgentState { Idle, Thinking, Queued, Blocked, Working, Paused }
+
         internal sealed class AgentView
         {
-            public string Name, Status, Goal, Now;
+            public string Name, Status, Goal, Now, Behind;
             public System.Windows.Media.Color Color;
             public List<string> Tasks;
-            public int Step, Calls, Changes;
+            public int Step, Calls, Changes, Ahead;
             public bool PlanDone, Working;
+            public AgentState State;
             public ActionKind NowAction;
             public DateTime NowStarted;
+            public DateTime? LastEnd;
         }
 
         internal sealed class StepView
@@ -541,23 +638,25 @@ namespace T3LabRevit.Core
                     Paused = Paused, ShowOnModel = ShowOnModel, Follow = Follow,
                     Touched = Touched.TryGetValue(active, out HashSet<long> set) ? set.Count : 0,
                 };
-                foreach (AgentInfo a in Agents.Values.OrderByDescending(x => x.LastSeen))
+                foreach (AgentInfo a in AllAgents().OrderByDescending(x => x.LastSeen))
                 {
                     AgentStep cur = a.Current;
+                    AgentState state = StateOf(a, cur);
                     v.Agents.Add(new AgentView
                     {
                         Name = a.Name, Color = a.Color, Goal = a.Goal, Tasks = a.Tasks.ToList(), Step = a.Step, PlanDone = a.PlanDone,
                         Working = cur != null, Now = cur?.Caption, NowAction = cur?.Action ?? ActionKind.Read,
-                        NowStarted = cur?.Started ?? DateTime.Now,
-                        Status = Paused ? "Paused" : cur != null ? "Working" : (DateTime.Now - a.LastSeen).TotalSeconds < 15 ? "Thinking" : "Idle",
-                        Calls = a.Calls, Changes = a.Changes,
+                        NowStarted = cur == null ? DateTime.Now : cur.OnMain ? cur.RunStarted : cur.Granted != default ? cur.Granted : cur.Started,
+                        State = state, Status = StatusText(state, cur), Ahead = cur?.Ahead ?? 0, Behind = cur?.Behind,
+                        LastEnd = a.LastEnd, Calls = a.Calls, Changes = a.Changes,
                     });
                 }
                 foreach (AgentStep s in Feed)
                 {
+                    AgentInfo a = Agents.TryGetValue(s.Agent, out AgentInfo live) ? live : Retired.TryGetValue(s.Agent, out AgentInfo old) ? old : null;
                     v.Feed.Add(new StepView
                     {
-                        Agent = Agents.TryGetValue(s.Agent, out AgentInfo a) ? a.Name : s.Agent,
+                        Agent = a?.Name ?? Label(s.Agent),
                         Color = a?.Color ?? Rgb(0x88, 0x88, 0x88),
                         Caption = s.Caption, Error = s.Error, Action = s.Action, State = s.State, Seconds = s.Seconds,
                         When = s.Started.AddSeconds(s.Seconds), Changed = s.Changed,
@@ -565,6 +664,42 @@ namespace T3LabRevit.Core
                 }
                 return v;
             }
+        }
+
+        static AgentState StateOf(AgentInfo a, AgentStep cur)
+        {
+            if (Paused) return AgentState.Paused;
+            if (cur != null)
+            {
+                if (cur.Queued) return AgentState.Queued;
+                bool waitsForRevit = !cur.OnMain && cur.Granted != default && (DateTime.Now - cur.Granted).TotalSeconds > BlockedAfterS;
+                return waitsForRevit ? AgentState.Blocked : AgentState.Working;
+            }
+            if (!a.PlanDone && a.LastEnd.HasValue && (DateTime.Now - a.LastEnd.Value).TotalSeconds < ThinkS) return AgentState.Thinking;
+            return AgentState.Idle;
+        }
+
+        static string StatusText(AgentState state, AgentStep cur)
+        {
+            switch (state)
+            {
+                case AgentState.Paused: return "Paused";
+                case AgentState.Queued: return cur.Ahead > 0 ? $"In line · {cur.Ahead} ahead" : "In line · next";
+                case AgentState.Blocked: return "Waiting for Revit";
+                case AgentState.Working: return "Working";
+                case AgentState.Thinking: return "Thinking";
+                default: return "Idle";
+            }
+        }
+
+        /// <summary>"now", "12 s ago", "3 min ago", "14:05".</summary>
+        internal static string Ago(DateTime when)
+        {
+            double s = (DateTime.Now - when).TotalSeconds;
+            if (s < 5) return "now";
+            if (s < 60) return (int)s + " s ago";
+            if (s < 3600) return (int)(s / 60) + " min ago";
+            return when.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
         }
 
         static void Refresh(bool reveal)
@@ -596,7 +731,9 @@ namespace T3LabRevit.Core
                 {
                     Agent = agent.Name, Color = agent.Color, Caption = step.Caption, Action = step.Action,
                     Failed = step.State != StepState.Ok, Change = IsChange(step),
+                    Subject = IsChange(step) ? Subject(elements) : null,
                 };
+                var labels = new Dictionary<long, string>();
                 foreach (UIView uiv in uidoc.GetOpenUIViews())
                 {
                     if (!(doc.GetElement(uiv.ViewId) is Autodesk.Revit.DB.View view)) continue;
@@ -610,7 +747,9 @@ namespace T3LabRevit.Core
                         BoundingBoxXYZ b = null;
                         try { b = e.get_BoundingBox(view); } catch (Exception) { }
                         if (b == null) continue;
-                        CursorUi.Box r = p.Project(b, Label(e), false);
+                        long key = Id.V(e.Id);
+                        if (!labels.TryGetValue(key, out string label)) labels[key] = label = Subject(e);
+                        CursorUi.Box r = p.Project(b, label, false);
                         if (r != null) frame.Boxes.Add(r);
                     }
                     foreach (BoundingBoxXYZ b in step.DeletedBoxes.Take(MaxBoxes))
@@ -618,17 +757,88 @@ namespace T3LabRevit.Core
                         CursorUi.Box r = p.Project(b, "deleted", true);
                         if (r != null) frame.Boxes.Add(r);
                     }
+                    // draw-along: in the active view the cursor follows each new wall, grid, beam or line from start to end
+                    if (step.Action == ActionKind.Create && step.State == StepState.Ok && view.Id == doc.ActiveView?.Id)
+                        AddPath(frame, p, elements, step);
                 }
                 CursorUi.ShowFrame(frame);
             }
             catch (Exception ex) { Log.Error("agent cursors overlay: " + ex.Message); }
         }
 
-        static string Label(Element e)
+        static void AddPath(CursorUi.Frame frame, Projector p, List<Element> elements, AgentStep step)
         {
-            string cat = e.Category?.Name ?? e.GetType().Name;
-            ElementType t = Rv.TypeElement(e);
-            return t != null ? cat + " · " + t.Name : cat;
+            HashSet<long> created;
+            lock (Gate) created = new HashSet<long>(step.Created);
+            foreach (Element e in elements)
+            {
+                if (frame.Path.Count >= MaxPath) return;
+                if (!created.Contains(Id.V(e.Id))) continue;
+                Curve c = null;
+                try { c = e is Grid g ? g.Curve : e is CurveElement ce ? ce.GeometryCurve : (e.Location as LocationCurve)?.Curve; }
+                catch (Exception) { }
+                if (c == null || !c.IsBound) continue;
+                IList<XYZ> pts;
+                try { pts = c is Line ? new[] { c.GetEndPoint(0), c.GetEndPoint(1) } : c.Tessellate(); }
+                catch (Exception) { continue; }
+                if (pts.Count > 9) pts = Enumerable.Range(0, 9).Select(i => pts[i * (pts.Count - 1) / 8]).ToList();
+                CursorUi.Seg seg = p.Polyline(pts);
+                if (seg != null) frame.Path.Add(seg);
+            }
+        }
+
+        /// <summary>What a step made, for the cursor tag: "Wall 3450 × 200", "Door 0915 x 2134mm", "Wall ×3"; null if mixed.</summary>
+        static string Subject(List<Element> elements)
+        {
+            if (elements.Count == 0) return null;
+            if (elements.Count == 1) return Subject(elements[0]);
+            string cat = Singular(elements[0].Category?.Name);
+            if (cat == null || elements.Any(e => Singular(e.Category?.Name) != cat)) return null;
+            return cat + " ×" + elements.Count;
+        }
+
+        static string Subject(Element e)
+        {
+            string cat = Singular(e.Category?.Name) ?? e.GetType().Name;
+            try
+            {
+                switch (e)
+                {
+                    case Wall w when w.Location is LocationCurve wl:
+                        return $"{cat} {Mm(wl.Curve.Length)} × {Mm(w.Width)}";
+                    case Dimension d:
+                        return d.NumberOfSegments > 1 ? $"{cat} ×{d.NumberOfSegments}" : $"{cat} {d.ValueString}";
+                    case Grid g:
+                        return $"{cat} {g.Name}";
+                    case Level l:
+                        return $"{cat} {l.Name}";
+                    case TextNote t:
+                        return $"{cat} \"{Clip((t.Text ?? "").Trim(), 24)}\"";
+                    case SpatialElement s:
+                        string room = s.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString();
+                        return $"{cat} {s.Number} {room}".Trim();
+                    case ViewSheet sheet:
+                        return $"Sheet {sheet.SheetNumber}";
+                    case FamilyInstance fi:
+                        return $"{cat} {fi.Symbol?.Name}".Trim();
+                }
+                if (e.Location is LocationCurve lc) return $"{cat} {Mm(lc.Curve.Length)}";
+                ElementType type = Rv.TypeElement(e);
+                return type != null ? $"{cat} · {type.Name}" : cat;
+            }
+            catch (Exception) { return cat; }
+        }
+
+        static string Mm(double feet) => Math.Round(feet * U.MmPerFt).ToString("0", System.Globalization.CultureInfo.InvariantCulture);
+
+        /// <summary>"Walls" -> "Wall", "Assemblies" -> "Assembly"; other words (and other languages) as they are.</summary>
+        internal static string Singular(string category)
+        {
+            if (string.IsNullOrWhiteSpace(category)) return null;
+            string c = category.Trim();
+            if (c.EndsWith("ies", StringComparison.Ordinal) && c.Length > 4) return c.Substring(0, c.Length - 3) + "y";
+            if (c.EndsWith("s", StringComparison.Ordinal) && !c.EndsWith("ss", StringComparison.Ordinal) && c.Length > 3) return c.Substring(0, c.Length - 1);
+            return c;
         }
 
         /// <summary>Model point -> screen pixel for one open, non-perspective view (zoom corners + window rectangle).</summary>
@@ -655,6 +865,22 @@ namespace T3LabRevit.Core
             {
                 x = Rect.L + (q.DotProduct(_right) - _u0) / (_u1 - _u0) * (Rect.R - Rect.L);
                 y = Rect.B - (q.DotProduct(_up) - _v0) / (_v1 - _v0) * (Rect.B - Rect.T);
+            }
+
+            /// <summary>Model points -> screen points, clamped to the view; null when the curve is off screen or a dot.</summary>
+            public CursorUi.Seg Polyline(IList<XYZ> pts)
+            {
+                var seg = new CursorUi.Seg();
+                bool inside = false;
+                foreach (XYZ q in pts)
+                {
+                    ToScreen(q, out double x, out double y);
+                    if (x >= Rect.L && x <= Rect.R && y >= Rect.T && y <= Rect.B) inside = true;
+                    seg.Points.Add(new System.Windows.Point(Math.Max(Rect.L, Math.Min(Rect.R, x)), Math.Max(Rect.T, Math.Min(Rect.B, y))));
+                }
+                if (!inside || seg.Points.Count < 2) return null;
+                double span = seg.Points.Zip(seg.Points.Skip(1), (u, v) => (v - u).Length).Sum();
+                return span < 6 ? null : seg;
             }
 
             public CursorUi.Box Project(BoundingBoxXYZ b, string label, bool deleted)
@@ -707,7 +933,8 @@ namespace T3LabRevit.Core
             {
                 Feed.Clear();
                 Touched.Clear();
-                foreach (AgentInfo a in Agents.Values) { a.Goal = null; a.Tasks.Clear(); a.Step = 0; a.Calls = 0; a.Changes = 0; }
+                Retired.Clear();
+                foreach (AgentInfo a in AllAgents()) { a.Goal = null; a.Tasks.Clear(); a.Step = 0; a.Calls = 0; a.Changes = 0; }
             }
             CursorUi.ClearModel();
             Refresh(false);
@@ -733,7 +960,7 @@ namespace T3LabRevit.Core
             List<string> tasks = a.Has("tasks") ? a.Strs("tasks").Where(t => !string.IsNullOrWhiteSpace(t)).ToList() : null;
             Narrate(CurrentAgent, a.Str("goal"), tasks, a.Int("step", 0), a.Bool("done", false));
             var result = new Dictionary<string, object> { ["shown"] = Enabled };
-            if (!Enabled) result["note"] = "Agent Cursors is off in Revit; the user turns it on with T3Lab MCP > Agent Cursors on the ribbon.";
+            if (!Enabled) result["note"] = "Agent Cursors is off in Revit; the user turns it on with Add-Ins > T3Lab MCP > Agent Cursors on the ribbon.";
             return result;
         }
     }

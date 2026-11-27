@@ -16,10 +16,12 @@ namespace T3LabRevit.Core
     /// </summary>
     public static class Entry
     {
-        public const string Version = "1.0.0";
+        public const string Version = "1.1.0";
         public const int PortMin = 48910, PortMax = 48918;
 
         internal static MainThread Main { get; private set; }
+        /// <summary>The one Revit slot, shared fairly by every AI app (Conductor.cs).</summary>
+        internal static readonly Conductor Queue = new Conductor();
         internal static string ContentsDir { get; private set; }
         internal static string RevitVersion { get; private set; } = "";
         internal static IntPtr MainWindow { get; private set; }
@@ -90,8 +92,10 @@ namespace T3LabRevit.Core
         {
             if (_server == null) return $"T3Lab Revit MCP v{Version}: stopped.";
             string last = string.IsNullOrEmpty(LastCall) ? "none" : LastCall;
+            var q = Queue.Status();
+            string queue = (bool)q["busy"] ? $"busy ({q["tool"]}), {q["waiting"]} waiting" : "free";
             return $"T3Lab Revit MCP v{Version}: listening on 127.0.0.1:{_server.Port}\n{Registry.Count} tools · {CallCount} calls · last: {last}\n" +
-                   $"Agent Cursors: {(AgentCursors.Enabled ? "on" : "off")}\nLog: {Log.FilePath}";
+                   $"Queue: {queue}\nAgent Cursors: {(AgentCursors.Enabled ? "on" : "off")}\nLog: {Log.FilePath}";
         }
 
         internal static int Port => _server?.Port ?? 0;

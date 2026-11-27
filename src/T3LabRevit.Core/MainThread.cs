@@ -66,7 +66,7 @@ namespace T3LabRevit.Core
             if (!item.Done.Wait(startTimeoutMs))
             {
                 if (Interlocked.CompareExchange(ref item.State, Cancelled, Pending) == Pending)
-                    throw new ToolError($"Revit did not respond within {startTimeoutMs / 1000}s: a dialog, an edit mode (sketch, " +
+                    throw new NotStartedException($"Revit did not respond within {startTimeoutMs / 1000}s: a dialog, an edit mode (sketch, " +
                                         "in-place family) or a long operation is blocking it. Nothing was executed. Ask the user to " +
                                         "finish or cancel it in Revit, then retry.");
                 item.Done.Wait(MaxRunMs); // it started: wait for it to finish
@@ -88,6 +88,12 @@ namespace T3LabRevit.Core
             _disposed = true;
             try { _event?.Dispose(); } catch { }
             _event = null;
+        }
+
+        /// <summary>The work was cancelled before it started (Revit was not free in time): nothing ran.</summary>
+        internal sealed class NotStartedException : Exception
+        {
+            public NotStartedException(string message) : base(message) { }
         }
 
         interface IWork

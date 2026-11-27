@@ -2,7 +2,8 @@
 
     python -I tests/mock_revit.py 49910
 
-Tools: get_revit_context (echo), fail (isError result). Used by tests/smoke_bridge.py.
+Tools: get_revit_context (read, echo), set_parameter (trusted, echo), send_code_to_revit (experimental, echo),
+fail (isError result), busy (the add-in's revit_busy refusal). Used by tests/smoke_bridge.py.
 """
 
 import json
@@ -10,10 +11,17 @@ import os
 import socketserver
 import sys
 
+READ = {"readOnlyHint": True}
 TOOLS = [
-    {"name": "get_revit_context", "description": "mock status", "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "fail", "description": "always fails", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "get_revit_context", "description": "mock status", "inputSchema": {"type": "object", "properties": {}}, "annotations": READ},
+    {"name": "set_parameter", "description": "mock write", "inputSchema": {"type": "object", "properties": {}}, "annotations": {"readOnlyHint": False}},
+    {"name": "send_code_to_revit", "description": "mock code", "inputSchema": {"type": "object", "properties": {}}, "annotations": {"readOnlyHint": False}},
+    {"name": "fail", "description": "always fails", "inputSchema": {"type": "object", "properties": {}}, "annotations": READ},
+    {"name": "busy", "description": "always busy", "inputSchema": {"type": "object", "properties": {}}, "annotations": READ},
 ]
+BUSY = {"error_code": "revit_busy", "message": "Revit is busy with another AI call (create_walls for Codex, 31 s so far). Nothing was run.",
+        "retryable": True, "nothing_ran": True, "retry_after_s": 5, "ahead": 0,
+        "running": {"agent": "ChatGPT", "tool": "create_walls", "running_s": 31.0, "state": "running"}}
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -26,14 +34,19 @@ class Handler(socketserver.StreamRequestHandler):
             method, params = req.get("method"), req.get("params") or {}
             if method == "health":
                 result = {"app": "T3LabRevit", "version": "mock", "pid": os.getpid(), "port": self.server.server_address[1],
-                          "revit": "mock 2026", "active_document": "mock.rvt", "calls": 0}
+                          "revit": "mock 2026", "active_document": "mock.rvt", "calls": 0,
+                          "queue": {"busy": False, "waiting": 0}}
             elif method == "tools/list":
                 result = {"tools": TOOLS}
             elif method == "tools/call":
                 if params.get("name") == "fail":
                     result = {"content": [{"type": "text", "text": "mock failure"}], "isError": True}
+                elif params.get("name") == "busy":
+                    result = {"content": [{"type": "text", "text": json.dumps(BUSY)}], "isError": True}
                 else:
-                    text = json.dumps({"echo": params.get("arguments"), "client": params.get("client"), "big": "x" * int((params.get("arguments") or {}).get("big", 0))})
+                    text = json.dumps({"echo": params.get("arguments"), "client": params.get("client"), "tool": params.get("name"),
+                                       "lane": params.get("lane"), "queue_wait_s": params.get("queue_wait_s"),
+                                       "big": "x" * int((params.get("arguments") or {}).get("big", 0))})
                     result = {"content": [{"type": "text", "text": text}]}
             else:
                 self.wfile.write((json.dumps({"id": req.get("id"), "error": {"code": -32601, "message": "nope"}}) + "\n").encode())
