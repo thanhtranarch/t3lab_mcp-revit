@@ -147,16 +147,35 @@ theo từng agent (một agent gọi dồn dập không chặn agent khác). L�
 còn chuyện "ghi ma" (model đổi sau khi AI đã bỏ cuộc). `health` / nút Status cho thấy ai đang giữ Revit và bao nhiêu
 lời gọi đang chờ.
 
-Tuỳ chọn thêm vào `args` của server `t3lab-revit` trong config AI app (hoặc biến môi trường):
+Tuỳ chọn thêm vào `args` của server `t3lab-revit-mcp` trong config AI app (hoặc biến môi trường; tiền tố `T3LABREVIT_`
+riêng, nên biến `T3LAB_*` của T3Lab pyRevit không ảnh hưởng tới add-in này):
 
 | Tuỳ chọn | Biến | Việc |
 |---|---|---|
-| `--tier=read` · `trusted` · `experimental` | `T3LAB_TIER` | `read`: chỉ tool đọc · `trusted`: thêm tool sửa model / ghi file · `experimental` (mặc định): thêm `send_code_to_revit`. Tool vượt tier bị ẩn và bị từ chối (`tier_denied`) trước khi tới Revit |
-| `--deny=a,b` | `T3LAB_DENY` | Tắt vài tool cho client này (`tool_denied`) |
-| `--agent=<tên>` | `T3LAB_AGENT` | Tên hiện trên Agent Cursors (mặc định: tên app) |
-| `--lane=person` · `task` · `auto` | `T3LAB_LANE` | Thứ tự hàng đợi (bot tự chạy: `auto`). Chỉ xếp thứ tự, không cấp quyền |
-| `--queue-wait=45` | `T3LAB_QUEUE_WAIT_S` | Thời gian chờ tối đa (giây) để tới lượt |
-| `--audit=0` | `T3LAB_AUDIT=0` | Tắt nhật ký `%APPDATA%\T3LabRevitMCP\audit\<ngày>.jsonl` (mỗi lời gọi một dòng: agent, tool, ok / error_code, thời gian; không ghi tham số) |
+| `--tier=read` · `trusted` · `experimental` | `T3LABREVIT_TIER` | `read`: chỉ tool đọc · `trusted`: thêm tool sửa model / ghi file · `experimental` (mặc định): thêm `send_code_to_revit`. Tool vượt tier bị ẩn và bị từ chối (`tier_denied`) trước khi tới Revit |
+| `--deny=a,b` | `T3LABREVIT_DENY` | Tắt vài tool cho client này (`tool_denied`) |
+| `--agent=<tên>` | `T3LABREVIT_AGENT` | Tên hiện trên Agent Cursors (mặc định: tên app) |
+| `--lane=person` · `task` · `auto` | `T3LABREVIT_LANE` | Thứ tự hàng đợi (bot tự chạy: `auto`). Chỉ xếp thứ tự, không cấp quyền |
+| `--queue-wait=45` | `T3LABREVIT_QUEUE_WAIT_S` | Thời gian chờ tối đa (giây) để tới lượt |
+| `--audit=0` | `T3LABREVIT_AUDIT=0` | Tắt nhật ký `%APPDATA%\T3LabRevitMCP\audit\<ngày>.jsonl` (mỗi lời gọi một dòng: agent, tool, ok / error_code, thời gian; không ghi tham số) |
+
+## Chạy cùng T3Lab (pyRevit extension)
+
+Cài cả hai trên một máy, trong cùng Revit, được. Không có gì dùng chung:
+
+| | T3Lab (pyRevit, t3lab-revit-api) | T3Lab Revit MCP (repo này) |
+|---|---|---|
+| Server trong AI app | `t3lab-revit` | `t3lab-revit-mcp` |
+| Cổng | 48884–48894 (HTTP 48880; pyRevit Routes được dời về 48870+) | 48910–48918 (T3Lab CAD MCP: 48900–48908) |
+| Thư mục dữ liệu | `%APPDATA%\T3LabAI` | `%APPDATA%\T3LabRevitMCP` |
+| Biến môi trường | `T3LAB_*` | `T3LABREVIT_*` |
+| Python trong Revit | IronPython 2.7 / CPython của pyRevit | IronPython 3.4 trong `scripting\` (Revit 2025+: AssemblyLoadContext riêng; 2022–2024: chỉ trả DLL cho chính engine này, không trả cho pyRevit / Dynamo / add-in khác) |
+| Ribbon | tab `T3Lab_Dev` | panel `T3Lab MCP` trên tab Add-Ins |
+| Agent Cursors | thanh giữa cạnh dưới view | thanh góc trên phải cửa sổ Revit |
+
+Connect AI chỉ ghi / xoá entry `t3lab-revit-mcp`, không đụng `t3lab-revit` (`tests/test_register.py`). Hai server có nhiều tool
+cùng tên (vd `send_code_to_revit`, `get_revit_context`); AI app phân biệt theo tên server, và bridge nhắc AI giữ một việc trên
+một server. Revit vẫn chạy từng lời gọi một: hai hàng đợi riêng, không bao giờ hai lệnh Revit API cùng lúc.
 
 ## Tool (64)
 

@@ -48,11 +48,11 @@ namespace T3LabRevit.Core
                 throw new ToolError("Python scripting is not installed next to the add-in (" + dll + "). Run the installer again.");
             Assembly asm;
 #if NETFRAMEWORK
-            AppDomain.CurrentDomain.AssemblyResolve += (s, e) =>
+            if (!_hooked)
             {
-                string file = Path.Combine(dir, new AssemblyName(e.Name).Name + ".dll");
-                return File.Exists(file) ? Assembly.LoadFrom(file) : null;
-            };
+                AppDomain.CurrentDomain.AssemblyResolve += (s, e) => ResolveOwn(dir, e);
+                _hooked = true;
+            }
             asm = Assembly.LoadFrom(dll);
 #else
             asm = new ScriptContext(dir).LoadFromAssemblyPath(dll);
@@ -63,6 +63,48 @@ namespace T3LabRevit.Core
             Log.Info("scripting loaded: " + _version);
             return _run;
         }
+
+#if NETFRAMEWORK
+        static bool _hooked;
+
+        /// <summary>
+        /// Answers only for our engine: a request made by a DLL in scripting\, or one for exactly the identity of a file
+        /// there. The AppDomain is shared with pyRevit (IronPython 2.7, pythonnet), Dynamo and other add-ins; answering
+        /// them by simple name would hand them our IronPython 3.4 / System.Memory / Unsafe instead of the version they asked for.
+        /// </summary>
+        static Assembly ResolveOwn(string dir, ResolveEventArgs e)
+        {
+            AssemblyName want;
+            try { want = new AssemblyName(e.Name); }
+            catch (Exception) { return null; }
+            string file = Path.Combine(dir, want.Name + ".dll");
+            if (!File.Exists(file)) return null;
+            if (!FromDir(e.RequestingAssembly, dir))
+            {
+                AssemblyName have;
+                try { have = AssemblyName.GetAssemblyName(file); }
+                catch (Exception) { return null; }
+                if (want.Version == null || want.Version != have.Version || !SameToken(want, have)) return null;
+            }
+            try { return Assembly.LoadFrom(file); }
+            catch (Exception) { return null; }
+        }
+
+        static bool FromDir(Assembly requester, string dir)
+        {
+            if (requester == null || requester.IsDynamic) return false;
+            try { return string.Equals(Path.GetDirectoryName(requester.Location), dir, StringComparison.OrdinalIgnoreCase); }
+            catch (Exception) { return false; }
+        }
+
+        static bool SameToken(AssemblyName a, AssemblyName b)
+        {
+            byte[] x = a.GetPublicKeyToken() ?? new byte[0], y = b.GetPublicKeyToken() ?? new byte[0];
+            if (x.Length != y.Length) return false;
+            for (int i = 0; i < x.Length; i++) if (x[i] != y[i]) return false;
+            return true;
+        }
+#endif
 
 #if !NETFRAMEWORK
         sealed class ScriptContext : AssemblyLoadContext

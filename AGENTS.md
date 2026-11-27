@@ -37,4 +37,8 @@ Rules:
   `Core/Conductor.cs`, `Core/T3Style.cs` (bar palettes, action / agent colours, every word on the Agent Cursors bar) and
   `Loader/T3Icons.cs` (ribbon icons, T3 Space Line of t3lab-revit-api). The ribbon (buttons, order, tooltips), the bar
   layout and the Status lines match too. Change both repos together.
+- Runs side by side with T3Lab (pyRevit, t3lab-revit-api) in the same Revit: keep our server name `t3lab-revit-mcp`, ports
+  48910-48918, `%APPDATA%\T3LabRevitMCP`, env vars `T3LABREVIT_*` (theirs: `t3lab-revit`, 48884-48894, `T3LabAI`, `T3LAB_*`).
+  Connect AI never touches another server's entry. An `AssemblyResolve` handler answers only for our own DLLs
+  (`CodeTools.ResolveOwn`): the AppDomain is shared with pyRevit's IronPython 2.7 / pythonnet and Dynamo. README "Chạy cùng T3Lab".
 - Nothing here is verified inside Revit by CI. Say "NEEDS VERIFICATION in Revit" for behaviour you could not run.
