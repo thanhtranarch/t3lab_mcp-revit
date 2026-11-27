@@ -89,7 +89,7 @@ def main():
         c.request("initialize", {"protocolVersion": "2099-01-01", "capabilities": {}, "clientInfo": {"name": "Claude Code", "version": "2.1"}})
         tools = [t["name"] for t in c.request("tools/list")["result"]["tools"]]
         check("tools/list live", "get_revit_context" in tools and "switch_revit_instance" in tools, tools)
-        check("cache written", os.path.exists(os.path.join(appdata, "T3LabRevitMCP", "tools_cache.json")))
+        check("cache written", os.path.exists(os.path.join(appdata, "T3LabRevit", "tools_cache.json")))
         r = c.request("tools/call", {"name": "get_revit_context", "arguments": {"a": 1, "revit_port": PORT}})["result"]
         reply = json.loads(r["content"][0]["text"])
         echo = reply["echo"]
@@ -110,7 +110,7 @@ def main():
         inst = json.loads(r["content"][0]["text"])["instances"]
         check("list_revit_instances", len(inst) == 1 and inst[0]["port"] == PORT and inst[0]["current"], inst)
         c.close()
-        audit_dir = os.path.join(appdata, "T3LabRevitMCP", "audit")
+        audit_dir = os.path.join(appdata, "T3LabRevit", "audit")
         lines = []
         for name in os.listdir(audit_dir) if os.path.isdir(audit_dir) else []:
             with open(os.path.join(audit_dir, name), encoding="utf-8") as f:

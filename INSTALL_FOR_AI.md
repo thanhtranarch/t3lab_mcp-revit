@@ -19,7 +19,7 @@ Python 3.8+ is used if present; otherwise the installer downloads the embeddable
 powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/thanhtranarch/t3lab_revitmcp/main/install.ps1)))"
 ```
 
-- It installs the add-in for every Revit found, deploys the bridge to `%APPDATA%\T3LabRevitMCP\bridge.py`, and adds
+- It installs the add-in for every Revit found, deploys the bridge to `%APPDATA%\T3LabRevit\bridge.py`, and adds
   the MCP server **`t3lab-revit-mcp`** to every AI app found: Claude Desktop, Claude Code (user scope), Codex
   (`~/.codex/config.toml`), Cursor, VS Code, GitHub Copilot CLI, Gemini CLI, Antigravity, Windsurf. Each config file is
   backed up first; other servers are kept.
@@ -37,7 +37,7 @@ The last lines say what happened. `OK` = done, `SKIP` / `WARN` = read the line a
 ## 2. Verify (changes nothing)
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "$env:APPDATA\T3LabRevitMCP\install.ps1" -Check
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:APPDATA\T3LabRevit\install.ps1" -Check
 ```
 
 It lists the add-in per Revit year, the Python, every AI app and whether `t3lab-revit-mcp` is registered there, and
@@ -56,7 +56,7 @@ ends with one JSON line from the bridge: `"revit_running": true` once Revit is o
 Call the tool `get_revit_context` (server `t3lab-revit-mcp`). It returns the Revit version, the open models, the
 active view and the levels. If it says *not reachable*: Revit is closed, or the add-in did not load — ask the user to
 open Revit and look for the **T3Lab MCP** panel on the **Add-Ins** tab; **Status** there shows the port and the log folder
-(`%APPDATA%\T3LabRevitMCP\logs`).
+(`%APPDATA%\T3LabRevit\logs`).
 
 ## Using the tools well
 
@@ -74,5 +74,5 @@ open Revit and look for the **T3Lab MCP** panel on the **Add-Ins** tab; **Status
 ## Remove
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "$env:APPDATA\T3LabRevitMCP\install.ps1" -Uninstall
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:APPDATA\T3LabRevit\install.ps1" -Uninstall
 ```

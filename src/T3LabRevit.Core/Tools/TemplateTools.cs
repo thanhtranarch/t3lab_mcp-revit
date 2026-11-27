@@ -419,7 +419,7 @@ namespace T3LabRevit.Core
                 cats.Insert(cat);
             }
             string previous = app.SharedParametersFilename;
-            string temp = Path.Combine(Path.GetTempPath(), "T3LabRevitMCP_shared_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".txt");
+            string temp = Path.Combine(Path.GetTempPath(), "T3LabRevit_shared_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".txt");
             File.WriteAllText(temp, "");
             try
             {

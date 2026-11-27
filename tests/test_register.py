@@ -36,7 +36,7 @@ def main():
         json.dump({"mcpServers": {"t3lab-revit": {"command": "py"}}, "theme": "dark"}, f)
     # no claude CLI on PATH, so Claude Code is skipped (not found) in "all" mode
     env = {"HOME": home, "USERPROFILE": home, "APPDATA": appdata, "LOCALAPPDATA": os.path.join(t, "local"), "PATH": os.path.dirname(sys.executable)}
-    args = ["--bridge", "C:\\Users\\u\\AppData\\Roaming\\T3LabRevitMCP\\bridge.py", "--python", "C:\\Py\\python.exe"]
+    args = ["--bridge", "C:\\Users\\u\\AppData\\Roaming\\T3LabRevit\\bridge.py", "--python", "C:\\Py\\python.exe"]
 
     code, out = run(env, *args)
     got = {r["client"]: r["status"] for r in out["results"]}
@@ -44,7 +44,7 @@ def main():
     check("register: 4 clients", got == {"claude-desktop": "registered", "codex": "registered", "cursor": "registered", "vscode": "registered"}, got)
     claude = json.load(open(os.path.join(appdata, "Claude", "claude_desktop_config.json")))
     check("claude: other server + settings kept", "t3lab-revit" in claude["mcpServers"] and claude["theme"] == "dark", claude)
-    check("claude: entry", claude["mcpServers"]["t3lab-revit-mcp"] == {"command": "C:\\Py\\python.exe", "args": ["-I", "C:/Users/u/AppData/Roaming/T3LabRevitMCP/bridge.py"]}, claude)
+    check("claude: entry", claude["mcpServers"]["t3lab-revit-mcp"] == {"command": "C:\\Py\\python.exe", "args": ["-I", "C:/Users/u/AppData/Roaming/T3LabRevit/bridge.py"]}, claude)
     vs = json.load(open(os.path.join(appdata, "Code", "User", "mcp.json")))
     check("vscode: servers + type stdio", vs["servers"]["t3lab-revit-mcp"]["type"] == "stdio", vs)
     toml = open(os.path.join(home, ".codex", "config.toml")).read()

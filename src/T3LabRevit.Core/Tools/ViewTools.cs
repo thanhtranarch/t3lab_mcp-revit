@@ -263,7 +263,7 @@ namespace T3LabRevit.Core
             View view = Rv.View(doc, a.Str("view"), c.ActiveView);
             if (view.ViewType == ViewType.Schedule) throw new ToolError("A schedule has no image: use get_schedule_data.");
             int pixels = Math.Max(300, Math.Min(2400, a.Int("pixels", 1400)));
-            string dir = Path.Combine(Path.GetTempPath(), "T3LabRevitMCP", "img");
+            string dir = Path.Combine(Path.GetTempPath(), "T3LabRevit", "img");
             Directory.CreateDirectory(dir);
             string prefix = Path.Combine(dir, "v" + DateTime.Now.ToString("HHmmssfff"));
             var opts = new ImageExportOptions

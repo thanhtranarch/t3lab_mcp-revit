@@ -31,10 +31,10 @@ namespace T3LabRevit.Loader
         }
     }
 
-    /// <summary>%APPDATA%\T3LabRevitMCP\autostart.off turns the start with Revit off.</summary>
+    /// <summary>%APPDATA%\T3LabRevit\autostart.off turns the start with Revit off.</summary>
     internal static class Settings
     {
-        internal static string DataDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "T3LabRevitMCP");
+        internal static string DataDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "T3LabRevit");   // before 1.1.0: T3LabRevitMCP (install.ps1 moves it)
         static string OffFlag => Path.Combine(DataDir, "autostart.off");
         internal static string StartError;
 
@@ -139,7 +139,7 @@ namespace T3LabRevit.Loader
         }
     }
 
-    /// <summary>Runs the installer's client step (%APPDATA%\T3LabRevitMCP\install.ps1 -ConnectOnly) in a console the user can read.</summary>
+    /// <summary>Runs the installer's client step (%APPDATA%\T3LabRevit\install.ps1 -ConnectOnly) in a console the user can read.</summary>
     [Transaction(TransactionMode.Manual)]
     public sealed class ConnectCommand : IExternalCommand
     {

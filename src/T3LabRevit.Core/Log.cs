@@ -3,13 +3,13 @@ using System.IO;
 
 namespace T3LabRevit.Core
 {
-    /// <summary>Append-only log at %APPDATA%\T3LabRevitMCP\logs\t3labrevit.log (rolled over at 2 MB).</summary>
+    /// <summary>Append-only log at %APPDATA%\T3LabRevit\logs\t3labrevit.log (rolled over at 2 MB).</summary>
     internal static class Log
     {
         static readonly object Gate = new object();
 
         internal static string DataDir =>
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "T3LabRevitMCP");
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "T3LabRevit");
 
         internal static string FilePath => Path.Combine(DataDir, "logs", "t3labrevit.log");
 

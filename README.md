@@ -9,7 +9,7 @@ Không cần pyRevit, không cần quyền admin, không cần cài .NET SDK. C�
 [t3lab-revit-api](https://github.com/thanhtranarch/t3lab-revit-api).
 
 ```
-AI app ──stdio MCP──> bridge.py (%APPDATA%\T3LabRevitMCP) ──TCP 127.0.0.1:48910-48918──> T3LabRevit add-in trong Revit
+AI app ──stdio MCP──> bridge.py (%APPDATA%\T3LabRevit) ──TCP 127.0.0.1:48910-48918──> T3LabRevit add-in trong Revit
 ```
 
 ## Cài đặt — chọn 1 trong 3 cách
@@ -42,21 +42,22 @@ AI sẽ đọc [`INSTALL_FOR_AI.md`](INSTALL_FOR_AI.md), chạy installer, kiể
 
 | Bước | Kết quả |
 |---|---|
-| Add-in | `%APPDATA%\T3LabRevitMCP\addin\<năm>\` + manifest `%APPDATA%\Autodesk\Revit\Addins\<năm>\T3LabRevit.addin` cho mọi Revit tìm thấy |
-| Bridge | `%APPDATA%\T3LabRevitMCP\bridge.py` (chỉ dùng thư viện chuẩn Python) |
-| Python | Dùng Python 3.8+ có sẵn; không có thì tải bản embeddable 3.12 (~11 MB) vào `%APPDATA%\T3LabRevitMCP\python` |
+| Add-in | `%APPDATA%\T3LabRevit\addin\<năm>\` + manifest `%APPDATA%\Autodesk\Revit\Addins\<năm>\T3LabRevit.addin` cho mọi Revit tìm thấy |
+| Bridge | `%APPDATA%\T3LabRevit\bridge.py` (chỉ dùng thư viện chuẩn Python) |
+| Python | Dùng Python 3.8+ có sẵn; không có thì tải bản embeddable 3.12 (~11 MB) vào `%APPDATA%\T3LabRevit\python` |
 | AI app | Thêm server **`t3lab-revit-mcp`** vào mọi app tìm thấy (backup file config trước, giữ nguyên server khác) |
+| Bản cũ (trước 1.1.0) | Thư mục cũ `%APPDATA%\T3LabRevitMCP` → `%APPDATA%\T3LabRevit` (cùng kiểu `%APPDATA%\T3LabCAD`): cài đặt, log, audit, Python được chuyển sang, AI app được trỏ tới bridge mới, rồi thư mục cũ bị xoá. Còn giữ khi Revit đang chạy, khi dùng `-NoClients` / `-Clients <vài app>`, hoặc Claude Desktop đang mở: chạy lại `-ConnectOnly` sau đó |
 
 Sau khi cài: **mở lại Revit** (panel **T3Lab MCP** xuất hiện trong tab **Add-Ins**, server tự chạy) và **mở lại AI app**.
 Revit 2026+ có thể hỏi về add-in chưa ký số → chọn **Always Load**.
 
 ```powershell
 # Kiểm tra (không thay đổi gì): add-in từng năm, Python, AI app nào đã kết nối, Revit có đang trả lời không
-& "$env:APPDATA\T3LabRevitMCP\install.ps1" -Check
+& "$env:APPDATA\T3LabRevit\install.ps1" -Check
 # Chỉ kết nối lại AI app (hoặc nút Add-Ins > T3Lab MCP > Connect AI trong Revit)
-& "$env:APPDATA\T3LabRevitMCP\install.ps1" -ConnectOnly
+& "$env:APPDATA\T3LabRevit\install.ps1" -ConnectOnly
 # Gỡ hết
-& "$env:APPDATA\T3LabRevitMCP\install.ps1" -Uninstall
+& "$env:APPDATA\T3LabRevit\install.ps1" -Uninstall
 ```
 
 Tuỳ chọn: `-Clients claude-desktop,claude-code` (chỉ vài app) · `-Years 2024,2026` (chỉ vài bản Revit) ·
@@ -102,7 +103,7 @@ thứ tự, icon (T3 Space Line của t3lab-revit-api, theo theme sáng / tối 
 
 ## Lệnh: nút, lệnh gõ, CLI, tool MCP
 
-Mọi việc trên ribbon đều làm được từ dòng lệnh (`B` = `python -I "%APPDATA%\T3LabRevitMCP\bridge.py"`) và — trừ Start / Stop, Connect AI — từ AI app qua MCP. Cùng bảng ở README của T3Lab CAD MCP.
+Mọi việc trên ribbon đều làm được từ dòng lệnh (`B` = `python -I "%APPDATA%\T3LabRevit\bridge.py"`) và — trừ Start / Stop, Connect AI — từ AI app qua MCP. Cùng bảng ở README của T3Lab CAD MCP.
 
 | Việc | Revit (Add-Ins › T3Lab MCP) | AutoCAD (Add-ins › T3Lab MCP · lệnh gõ) | Dòng lệnh | Tool MCP |
 |---|---|---|---|---|
@@ -157,7 +158,7 @@ riêng, nên biến `T3LAB_*` của T3Lab pyRevit không ảnh hưởng tới ad
 | `--agent=<tên>` | `T3LABREVIT_AGENT` | Tên hiện trên Agent Cursors (mặc định: tên app) |
 | `--lane=person` · `task` · `auto` | `T3LABREVIT_LANE` | Thứ tự hàng đợi (bot tự chạy: `auto`). Chỉ xếp thứ tự, không cấp quyền |
 | `--queue-wait=45` | `T3LABREVIT_QUEUE_WAIT_S` | Thời gian chờ tối đa (giây) để tới lượt |
-| `--audit=0` | `T3LABREVIT_AUDIT=0` | Tắt nhật ký `%APPDATA%\T3LabRevitMCP\audit\<ngày>.jsonl` (mỗi lời gọi một dòng: agent, tool, ok / error_code, thời gian; không ghi tham số) |
+| `--audit=0` | `T3LABREVIT_AUDIT=0` | Tắt nhật ký `%APPDATA%\T3LabRevit\audit\<ngày>.jsonl` (mỗi lời gọi một dòng: agent, tool, ok / error_code, thời gian; không ghi tham số) |
 
 ## Chạy cùng T3Lab (pyRevit extension)
 
@@ -167,7 +168,7 @@ Cài cả hai trên một máy, trong cùng Revit, được. Không có gì dùn
 |---|---|---|
 | Server trong AI app | `t3lab-revit` | `t3lab-revit-mcp` |
 | Cổng | 48884–48894 (HTTP 48880; pyRevit Routes được dời về 48870+) | 48910–48918 (T3Lab CAD MCP: 48900–48908) |
-| Thư mục dữ liệu | `%APPDATA%\T3LabAI` | `%APPDATA%\T3LabRevitMCP` |
+| Thư mục dữ liệu | `%APPDATA%\T3LabAI` | `%APPDATA%\T3LabRevit` |
 | Biến môi trường | `T3LAB_*` | `T3LABREVIT_*` |
 | Python trong Revit | IronPython 2.7 / CPython của pyRevit | IronPython 3.4 trong `scripting\` (Revit 2025+: AssemblyLoadContext riêng; 2022–2024: chỉ trả DLL cho chính engine này, không trả cho pyRevit / Dynamo / add-in khác) |
 | Ribbon | tab `T3Lab_Dev` | panel `T3Lab MCP` trên tab Add-Ins |
@@ -244,7 +245,7 @@ Test (không cần Revit): `python -I tests/smoke_bridge.py` · `python -I tests
 | AI báo `revit_busy` | AI khác đang dùng Revit (xem `running`), hoặc Revit đang mở dialog / edit mode. Không có gì chạy; AI thử lại sau `retry_after_s` |
 | AI app không thấy server | Thoát hẳn AI app rồi mở lại (Claude Desktop: tray icon → Quit). Chạy `-Check` để xem app nào đã đăng ký |
 | Tool trả *Revit did not respond within 60s* | Revit đang mở dialog / đang ở chế độ edit (sketch, in-place) → đóng nó rồi thử lại. Không có gì bị thực thi |
-| Cần log | `%APPDATA%\T3LabRevitMCP\logs\t3labrevit.log` (nút **Status → Open the log folder**) |
+| Cần log | `%APPDATA%\T3LabRevit\logs\t3labrevit.log` (nút **Status → Open the log folder**) |
 
 > **Trạng thái:** build 6 năm Revit (0 warning), test bridge và test đăng ký AI app đã chạy được (không cần Revit);
 > job cài thật trên Windows chạy trong CI. **Chưa QA bên trong Revit thật** (con trỏ Agent Cursors, tool tạo/sửa).

@@ -1,7 +1,7 @@
 """T3Lab Revit MCP bridge: MCP over stdio (Claude Desktop / Claude Code / Codex / Cursor /
 VS Code / Gemini ...) to the T3LabRevit add-in running inside Revit.
 
-Deployed to %APPDATA%/T3LabRevitMCP/bridge.py by install.ps1, and the client
+Deployed to %APPDATA%/T3LabRevit/bridge.py by install.ps1, and the client
 config points there (run with `python -I`, so a polluted PYTHONPATH such as
 pyRevit's cannot break the interpreter).
 
@@ -35,7 +35,7 @@ Options (flag or environment variable), for the MCP client config:
     --deny=a,b        T3LABREVIT_DENY          tools this client may not call
     --lane=<lane>     T3LABREVIT_LANE          person (default) | task | auto: queue order, never permissions
     --queue-wait=<s>  T3LABREVIT_QUEUE_WAIT_S  longest wait for a turn in Revit (default 45, under clients' ~60 s)
-    --audit=0         T3LABREVIT_AUDIT=0       no audit log (%APPDATA%/T3LabRevitMCP/audit/<day>.jsonl)
+    --audit=0         T3LABREVIT_AUDIT=0       no audit log (%APPDATA%/T3LabRevit/audit/<day>.jsonl)
 
 Stdlib only.
 """
@@ -73,7 +73,7 @@ MAX_TEXT_CHARS = 90000     # Claude Code moves results over ~25k tokens to a fil
 DOC_PIN = "revit_document"   # = Registry.DocumentPin in the add-in: work in another open document without switching
 PIN_ARG = "revit_port"
 
-DATA_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "T3LabRevitMCP")
+DATA_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "T3LabRevit")
 CACHE_FILE = os.path.join(DATA_DIR, "tools_cache.json")
 AUDIT_DIR = os.path.join(DATA_DIR, "audit")
 SNAPSHOT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools_snapshot.json")

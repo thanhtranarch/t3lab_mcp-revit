@@ -10,7 +10,7 @@ for that: the installer downloads the released add-in.
 | Loader (the DLL Revit loads) | `src/T3LabRevit.Loader/` | `IExternalApplication`, panel **T3Lab MCP** on Revit's own **Add-Ins** tab (never a tab of our own), loads Core from bytes. Keep it small: Revit locks it until restart. |
 | Core (server + tools) | `src/T3LabRevit.Core/` | TCP 127.0.0.1:48910-48918, one JSON object per line. Tools in `Tools/*.cs`, each `Registry.Add(...)`. |
 | Fair queue | `src/T3LabRevit.Core/Conductor.cs` | One Revit slot for every AI app: lane class, round robin per agent, deadline from the bridge (`queue_wait_s`) → `revit_busy` (`nothing_ran`). Pure .NET, no Revit API: `tests/conductor_test`. |
-| Python engine (`send_code_to_revit`) | `src/T3LabRevit.Scripting/` | IronPython 3.4, loaded by reflection from `addin/<year>/scripting` (own AssemblyLoadContext on .NET 8+); stdlib in `%APPDATA%\T3LabRevitMCP\pylib`. Never reference it from Core. |
+| Python engine (`send_code_to_revit`) | `src/T3LabRevit.Scripting/` | IronPython 3.4, loaded by reflection from `addin/<year>/scripting` (own AssemblyLoadContext on .NET 8+); stdlib in `%APPDATA%\T3LabRevit\pylib`. Never reference it from Core. |
 | Agent Cursors | `src/T3LabRevit.Core/AgentCursors.cs`, `CursorUi.cs` | Records calls on the socket thread; WPF bar + overlay on their own STA thread; never touch the Revit API there. One agent per chat (`client.session`). States: in line, waiting for Revit, working, thinking, idle. |
 | Bridge (MCP stdio) | `bridge/t3lab_revit_bridge.py` | Standard library only, Python 3.8+, runs with `-I`. Options `--tier` / `--deny` / `--agent` / `--lane` / `--queue-wait` / `--audit` (docstring). |
 | Installer | `install.ps1`, `Install.cmd`, `scripts/register_mcp.py` | PowerShell 5.1 compatible, ASCII only, no admin. |
@@ -38,7 +38,7 @@ Rules:
   `Loader/T3Icons.cs` (ribbon icons, T3 Space Line of t3lab-revit-api). The ribbon (buttons, order, tooltips), the bar
   layout and the Status lines match too. Change both repos together.
 - Runs side by side with T3Lab (pyRevit, t3lab-revit-api) in the same Revit: keep our server name `t3lab-revit-mcp`, ports
-  48910-48918, `%APPDATA%\T3LabRevitMCP`, env vars `T3LABREVIT_*` (theirs: `t3lab-revit`, 48884-48894, `T3LabAI`, `T3LAB_*`).
+  48910-48918, `%APPDATA%\T3LabRevit`, env vars `T3LABREVIT_*` (theirs: `t3lab-revit`, 48884-48894, `T3LabAI`, `T3LAB_*`).
   Connect AI never touches another server's entry. An `AssemblyResolve` handler answers only for our own DLLs
   (`CodeTools.ResolveOwn`): the AppDomain is shared with pyRevit's IronPython 2.7 / pythonnet and Dynamo. README "Chạy cùng T3Lab".
 - Nothing here is verified inside Revit by CI. Say "NEEDS VERIFICATION in Revit" for behaviour you could not run.

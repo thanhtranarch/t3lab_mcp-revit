@@ -13,10 +13,12 @@
 
   What it does:
     1. Gets the add-in: from this folder when it is an unzipped release, else -Source, else the latest GitHub release.
-    2. Copies it to %APPDATA%\T3LabRevitMCP\addin\<year> and writes %APPDATA%\Autodesk\Revit\Addins\<year>\T3LabRevit.addin
+    2. Copies it to %APPDATA%\T3LabRevit\addin\<year> and writes %APPDATA%\Autodesk\Revit\Addins\<year>\T3LabRevit.addin
        for each Revit found (2022-2027).
     3. Copies the bridge (bridge.py) and finds Python 3.8+; with none, downloads the embeddable Python (about 11 MB)
-       into %APPDATA%\T3LabRevitMCP\python (no admin, nothing on PATH).
+       into %APPDATA%\T3LabRevit\python (no admin, nothing on PATH).
+       Before 1.1.0 everything lived in %APPDATA%\T3LabRevitMCP: settings, logs, audit and Python move over, the AI apps
+       are pointed at the new bridge, then the old folder is removed (kept while Revit runs from it).
     4. Adds the server "t3lab-revit-mcp" to every AI app found (config files backed up first).
   Re-run any time: it updates in place. Restart Revit and the AI app afterwards.
 
@@ -50,7 +52,9 @@ $Repo = "thanhtranarch/t3lab_revitmcp"
 $ReleaseZip = "https://github.com/$Repo/releases/latest/download/T3LabRevitMCP.zip"
 $PyEmbed = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip"
 $AllYears = 2022..2027
-$Data = Join-Path $env:APPDATA "T3LabRevitMCP"
+$Data = Join-Path $env:APPDATA "T3LabRevit"                # same pattern as T3Lab CAD MCP (%APPDATA%\T3LabCAD)
+$OldData = Join-Path $env:APPDATA "T3LabRevitMCP"          # before 1.1.0
+$script:ClientsPending = $false
 $AddinRoot = Join-Path $env:APPDATA "Autodesk\Revit\Addins"
 $ServerName = "t3lab-revit-mcp"
 
@@ -132,6 +136,37 @@ function Install-EmbeddedPython {
     return $p
 }
 
+# ---------------------------------------------------------------- the old folder (before 1.1.0)
+function Move-OldData {
+    # The user's things only; the add-in, bridge and pylib are installed fresh. Nothing newer is overwritten.
+    if (-not (Test-Path $OldData)) { return }
+    New-Item -ItemType Directory -Force $Data | Out-Null
+    foreach ($name in "autostart.off", "agent_cursors.json", "tools_cache.json", "logs", "audit", "python") {
+        $from = Join-Path $OldData $name
+        $to = Join-Path $Data $name
+        if ((Test-Path $from) -and -not (Test-Path $to)) {
+            try { Copy-Item $from $to -Recurse -Force } catch { Warn "Could not copy $from ($($_.Exception.Message))" }
+        }
+    }
+    Ok "Settings, logs and audit from $OldData"
+}
+
+function Remove-OldData {
+    if (-not (Test-Path $OldData)) { return }
+    $how = "run: & `"$Data\install.ps1`" -ConnectOnly"
+    # every AI app must point at the new bridge first: all of them, and none left waiting (Claude Desktop open) or failed
+    if ($NoClients -or $Clients -ne "all" -or $script:ClientsPending) {
+        Warn "Kept $OldData (AI apps may still run its bridge). To move them all and remove it, $how"
+        return
+    }
+    if (@(Get-Process Revit -ErrorAction SilentlyContinue).Count -gt 0) {
+        Warn "Kept $OldData while Revit may still run the add-in from it. After closing Revit, $how"
+        return
+    }
+    try { Remove-Item $OldData -Recurse -Force; Ok "Removed the old folder $OldData" }
+    catch { Warn "Could not remove $OldData yet (a file is in use): close the AI apps, then $how" }
+}
+
 # ---------------------------------------------------------------- package
 function Get-Package {
     if ($Source) {
@@ -211,6 +246,7 @@ function Connect-Clients {
         }
     }
     $code = Invoke-Register @()
+    if ($code -ne 0) { $script:ClientsPending = $true }
     if ($code -eq 3) {
         # still running: a hidden helper adds it the moment Claude Desktop quits (it would overwrite the change otherwise)
         try {
@@ -246,6 +282,7 @@ if ($Check) {
     Step "T3Lab Revit MCP - check (changes nothing)"
     $ver = if (Test-Path (Join-Path $Data "version.txt")) { (Get-Content (Join-Path $Data "version.txt") -Raw).Trim() } else { "not installed" }
     Info "Installed version : $ver  ($Data)"
+    if (Test-Path $OldData) { Warn "The folder of an older version is still there: $OldData (install.ps1 -ConnectOnly removes it)" }
     $revit = Find-RevitYears
     Info "Revit found       : $(if ($revit) { $revit -join ', ' } else { 'none in Program Files' })"
     foreach ($y in $AllYears) {
@@ -279,14 +316,18 @@ if ($Uninstall) {
         $m = Join-Path $AddinRoot "$y\T3LabRevit.addin"
         if (Test-Path $m) { Remove-Item $m -Force; Ok "Removed $m" }
     }
-    try { Remove-Item $Data -Recurse -Force; Ok "Removed $Data" }
-    catch { Warn "Some files in $Data are in use (Revit is open): close Revit and delete the folder." }
+    foreach ($dir in $Data, $OldData) {
+        if (-not (Test-Path $dir)) { continue }
+        try { Remove-Item $dir -Recurse -Force; Ok "Removed $dir" }
+        catch { Warn "Some files in $dir are in use (Revit is open): close Revit and delete the folder." }
+    }
     return
 }
 
 if ($ConnectOnly) {
     if (-not (Test-Path (Join-Path $Data "bridge.py"))) { throw "Not installed yet: run install.ps1 without -ConnectOnly." }
     Connect-Clients
+    Remove-OldData
     return
 }
 
@@ -296,6 +337,7 @@ Step "Package"
 $pkg = Get-Package
 $manifest = Get-Content (Join-Path $pkg "manifest.json") -Raw | ConvertFrom-Json
 Ok "T3Lab Revit MCP $($manifest.version) ($pkg)"
+Move-OldData
 
 Step "Revit add-in"
 $wanted = @($Years | ForEach-Object { "$_" -split '[,; ]+' } | Where-Object { $_ -match '^\d{4}$' } | ForEach-Object { [int]$_ })
@@ -359,12 +401,13 @@ if (-not $py) { $py = Install-EmbeddedPython }
 Ok $py
 
 if (-not $NoClients) { Connect-Clients }
+Remove-OldData
 
 Step "Done"
 if ($restartRevit -or $revitRunning) {
-    Write-Host "  Restart Revit to load the add-in (tab 'T3Lab MCP')." -ForegroundColor Yellow
+    Write-Host "  Restart Revit to load the add-in (panel 'T3Lab MCP' on the Add-Ins tab)." -ForegroundColor Yellow
 } else {
-    Write-Host "  Open Revit: the tab 'T3Lab MCP' appears and the MCP server starts by itself." -ForegroundColor Green
+    Write-Host "  Open Revit: the panel 'T3Lab MCP' appears on the Add-Ins tab and the MCP server starts by itself." -ForegroundColor Green
 }
 Info "Revit 2026+ may ask once whether to load an unsigned add-in: choose 'Always Load'."
 Info "Then ask your AI app, e.g.: 'Use t3lab-revit-mcp: what model is open in Revit and how many walls does it have?'"
