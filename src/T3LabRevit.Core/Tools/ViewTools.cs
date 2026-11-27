@@ -13,7 +13,7 @@ namespace T3LabRevit.Core
         public static void Register()
         {
             Registry.Add("list_views", "List views", ToolKind.Read,
-                "Views of the active model (no sheets: use list_sheets). Filter by type (FloorPlan, CeilingPlan, EngineeringPlan, " +
+                "Views of the model (no sheets: use list_sheets). Filter by type (FloorPlan, CeilingPlan, EngineeringPlan, " +
                 "AreaPlan, Section, Elevation, ThreeD, Drafting, Legend, Schedule, DraftingView), name, level or placement on a sheet.",
                 Obj(P("type", Str("ViewType name, e.g. FloorPlan")),
                     P("name_contains", Str("Part of the view name")),
@@ -25,7 +25,7 @@ namespace T3LabRevit.Core
 
             Registry.Add("set_active_view", "Open a view", ToolKind.App,
                 "Make a view (or sheet) the active view in Revit, by name or id.",
-                ObjR("view", P("view", Str("View or sheet name, or id"))), SetActiveView);
+                ObjR("view", P("view", Str("View or sheet name, or id"))), SetActiveView, scope: ToolScope.Active);
 
             Registry.Add("create_view", "Create a view", ToolKind.Write,
                 "Create a view: kind=floor_plan, ceiling_plan, structural_plan (level), 3d (isometric), drafting, or duplicate " +
@@ -42,11 +42,11 @@ namespace T3LabRevit.Core
 
             Registry.Add("get_selection", "Get selection", ToolKind.Read,
                 "Elements the user has selected in Revit (ids + summary).",
-                Obj(Limit), GetSelection);
+                Obj(Limit), GetSelection, scope: ToolScope.Active);
 
             Registry.Add("set_selection", "Select / zoom elements", ToolKind.App,
                 "Select elements in Revit so the user sees them; zoom=true also zooms the active view to them. Empty list clears the selection.",
-                Obj(Ids, P("zoom", Bool("Zoom to the elements (default true)"))), SetSelection);
+                Obj(Ids, P("zoom", Bool("Zoom to the elements (default true)"))), SetSelection, scope: ToolScope.Active);
 
             Registry.Add("view_graphics", "Color, hide or isolate in a view", ToolKind.Write,
                 "Change how elements look in a view (active by default): action=color (rgb [r,g,b], transparency 0-100, solid fill), " +
@@ -137,7 +137,7 @@ namespace T3LabRevit.Core
                 case "ceiling_plan":
                 case "structural_plan":
                 {
-                    Level lv = Rv.LevelOrDefault(doc, c.UiDoc.ActiveView, a.Str("level"));
+                    Level lv = Rv.LevelOrDefault(doc, c.ActiveView, a.Str("level"));
                     ViewFamily f = kind == "floor_plan" ? ViewFamily.FloorPlan : kind == "ceiling_plan" ? ViewFamily.CeilingPlan : ViewFamily.StructuralPlan;
                     created = ViewPlan.Create(doc, Vft(doc, f).Id, lv.Id);
                     break;
@@ -150,7 +150,7 @@ namespace T3LabRevit.Core
                     break;
                 case "duplicate":
                 {
-                    View src = Rv.View(doc, a.Str("view"), c.UiDoc.ActiveView);
+                    View src = Rv.View(doc, a.Str("view"), c.ActiveView);
                     string mode = (a.Str("mode") ?? "plain").ToLowerInvariant();
                     ViewDuplicateOption opt = mode == "dependent" ? ViewDuplicateOption.AsDependent
                         : mode == "detailing" ? ViewDuplicateOption.WithDetailing : ViewDuplicateOption.Duplicate;
@@ -209,7 +209,7 @@ namespace T3LabRevit.Core
         static object ViewGraphics(ToolContext c, Args a)
         {
             Document doc = c.Doc;
-            View view = Rv.View(doc, a.Str("view"), c.UiDoc.ActiveView);
+            View view = Rv.View(doc, a.Str("view"), c.ActiveView);
             string action = a.ReqStr("action").ToLowerInvariant();
             List<ElementId> ids = a.Ids("element_ids");
             if (action != "clear_temporary" && ids.Count == 0) throw new ToolError("element_ids is empty.");
@@ -260,7 +260,7 @@ namespace T3LabRevit.Core
         static object ExportImage(ToolContext c, Args a)
         {
             Document doc = c.Doc;
-            View view = Rv.View(doc, a.Str("view"), c.UiDoc.ActiveView);
+            View view = Rv.View(doc, a.Str("view"), c.ActiveView);
             if (view.ViewType == ViewType.Schedule) throw new ToolError("A schedule has no image: use get_schedule_data.");
             int pixels = Math.Max(300, Math.Min(2400, a.Int("pixels", 1400)));
             string dir = Path.Combine(Path.GetTempPath(), "T3LabRevitMCP", "img");

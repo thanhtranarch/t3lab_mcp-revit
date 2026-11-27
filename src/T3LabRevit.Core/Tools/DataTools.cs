@@ -190,7 +190,7 @@ namespace T3LabRevit.Core
         public static void Register()
         {
             Registry.Add("model_overview", "Model health overview", ToolKind.Read,
-                "One-call audit of the active model: element counts per category (top 40), warnings (count + top kinds), families, " +
+                "One-call audit of the model: element counts per category (top 40), warnings (count + top kinds), families, " +
                 "in-place families, views / sheets / views not on sheets, rooms (unplaced / not enclosed), links, imported CAD, worksets, file size.",
                 Obj(), Overview);
 

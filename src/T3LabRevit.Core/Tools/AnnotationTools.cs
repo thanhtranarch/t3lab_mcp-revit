@@ -29,7 +29,7 @@ namespace T3LabRevit.Core
         static object Create(ToolContext c, Args a)
         {
             Document doc = c.Doc;
-            View view = Rv.View(doc, a.Str("view"), c.UiDoc.ActiveView);
+            View view = Rv.View(doc, a.Str("view"), c.ActiveView);
             string kind = a.ReqStr("kind").ToLowerInvariant();
             var ids = new List<ElementId>();
             var skipped = new List<object>();
@@ -138,7 +138,7 @@ namespace T3LabRevit.Core
         public static void Register()
         {
             Registry.Add("list_sheets", "List sheets", ToolKind.Read,
-                "Sheets of the active model: number, name, title block, the views and schedules placed on each, current revision.",
+                "Sheets of the model: number, name, title block, the views and schedules placed on each, current revision.",
                 Obj(P("number_contains", Str("Part of the sheet number")), P("name_contains", Str("Part of the sheet name")), Limit, Offset),
                 List);
 

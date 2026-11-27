@@ -16,15 +16,39 @@ namespace T3LabRevit.Core
         App,
     }
 
+    /// <summary>
+    /// Which models a tool can work in. Any: the active one, another open one or one opened in the background (pinned with
+    /// revit_document). Active: the active model only (it uses the UI: selection, the active view, the Python engine).
+    /// scripts/check_tool_scopes.py proves that no tool declared Any reaches the UI side.
+    /// </summary>
+    internal enum ToolScope { Any, Active }
+
     internal delegate object ToolHandler(ToolContext ctx, Args args);
 
     internal sealed class ToolContext
     {
         public UIApplication App;
+        /// <summary>Null when the call works in a model that is not the active one (pinned with revit_document).</summary>
         public UIDocument UiDoc;
         public Document Doc;
         /// <summary>Revit warnings dismissed during the call's transaction (reported back to the AI).</summary>
         public readonly List<string> Warnings = new List<string>();
+
+        /// <summary>The model's active view, or null in a model that is not the active one (tools then need a view argument).</summary>
+        public View ActiveView => UiDoc?.ActiveView;
+
+        /// <summary>The UI of the model, for a branch of a tool that needs it; elsewhere a clear refusal, never a null.</summary>
+        public UIDocument RequireUi(string what) =>
+            UiDoc ?? throw new NeedsActiveException($"{what} needs the active model: '{Doc?.Title}' is not active in Revit.");
+
+        /// <summary>The user's selection in the active model.</summary>
+        public ICollection<ElementId> SelectedIds() => RequireUi("The selection").Selection.GetElementIds();
+    }
+
+    /// <summary>A pinned call reached something only the active model has; nothing was changed. Rpc answers needs_active_document.</summary>
+    internal sealed class NeedsActiveException : Exception
+    {
+        public NeedsActiveException(string message) : base(message) { }
     }
 
     internal sealed class ToolDef
@@ -41,6 +65,7 @@ namespace T3LabRevit.Core
         public bool Background;
         /// <summary>A Read tool that can also write a file (CSV, image): not advertised as read-only.</summary>
         public bool WritesFiles;
+        public ToolScope Scope;
     }
 
     /// <summary>Tool result rendered as an MCP image block plus a JSON text block.</summary>
@@ -84,7 +109,8 @@ namespace T3LabRevit.Core
         }
 
         public static void Add(string name, string title, ToolKind kind, string description, string schema, ToolHandler handler,
-            bool needsDocument = true, bool tx = true, bool destructive = false, bool background = false, bool writesFiles = false)
+            bool needsDocument = true, bool tx = true, bool destructive = false, bool background = false, bool writesFiles = false,
+            ToolScope scope = ToolScope.Any)
         {
             if (!_tools.ContainsKey(name)) Order.Add(name);
             _tools[name] = new ToolDef
@@ -100,8 +126,19 @@ namespace T3LabRevit.Core
                 Destructive = destructive,
                 Background = background,
                 WritesFiles = writesFiles,
+                Scope = scope,
             };
         }
+
+        /// <summary>The argument that sends a call to another open model (stripped before the tool runs, Rpc.Execute).</summary>
+        public const string DocumentPin = "revit_document";
+
+        const string PinDescription =
+            "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). " +
+            "Default: the active model. It does not switch the model the user sees";
+
+        /// <summary>Tools that can work in any open model advertise the pin (scripts/gen_tools_snapshot.py adds the same).</summary>
+        public static bool TakesPin(ToolDef t) => t.NeedsDocument && t.Scope == ToolScope.Any;
 
         public static ToolDef Get(string name) => _tools.TryGetValue(name, out var t) ? t : null;
 
@@ -112,7 +149,7 @@ namespace T3LabRevit.Core
                 ["name"] = t.Name,
                 ["title"] = t.Title,
                 ["description"] = t.Description,
-                ["inputSchema"] = t.Schema,
+                ["inputSchema"] = TakesPin(t) ? WithPin(t.Schema) : t.Schema,
                 ["annotations"] = new Dictionary<string, object>
                 {
                     ["title"] = t.Title,
@@ -122,6 +159,17 @@ namespace T3LabRevit.Core
                 },
             }).ToList();
             return new Dictionary<string, object> { ["tools"] = tools };
+        }
+
+        /// <summary>A copy of the schema with the revit_document property (the stored schema is shared, never changed).</summary>
+        static Dictionary<string, object> WithPin(Dictionary<string, object> schema)
+        {
+            var copy = new Dictionary<string, object>(schema);
+            var props = schema.TryGetValue("properties", out object p) && p is Dictionary<string, object> d
+                ? new Dictionary<string, object>(d) : new Dictionary<string, object>();
+            props[DocumentPin] = new Dictionary<string, object> { ["type"] = "string", ["description"] = PinDescription };
+            copy["properties"] = props;
+            return copy;
         }
     }
 

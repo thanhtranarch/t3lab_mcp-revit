@@ -34,7 +34,7 @@ namespace T3LabRevit.Core
                 ObjR("code", P("code", Str("Python 3 code")),
                     P("purpose", Str("What the code does, a few plain words (shown to the user)")),
                     P("transaction", Bool("Run inside one transaction (default true)"))),
-                Run, needsDocument: false, tx: false, destructive: true);
+                Run, needsDocument: false, tx: false, destructive: true, scope: ToolScope.Active);   // the engine is given the UI app
         }
 
         static string StdLib => Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Entry.ContentsDir ?? "")) ?? "", "pylib");

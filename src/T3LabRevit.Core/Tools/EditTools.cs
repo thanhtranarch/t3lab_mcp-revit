@@ -336,7 +336,7 @@ namespace T3LabRevit.Core
         static object TagAll(ToolContext c, Args a)
         {
             Document doc = c.Doc;
-            View view = Rv.View(doc, a.Str("view"), c.UiDoc.ActiveView);
+            View view = Rv.View(doc, a.Str("view"), c.ActiveView);
             bool leader = a.Bool("leader", false);
             var tagged = new HashSet<long>();
             foreach (IndependentTag t in new FilteredElementCollector(doc, view.Id).OfClass(typeof(IndependentTag)).Cast<IndependentTag>())
@@ -404,7 +404,7 @@ namespace T3LabRevit.Core
             Document doc = c.Doc;
             FamilySymbol sym = Rv.TypeOf<FamilySymbol>(doc, a.ReqStr("type"));
             if (!sym.IsActive) { sym.Activate(); doc.Regenerate(); }
-            Level lv = Rv.LevelOrDefault(doc, c.UiDoc.ActiveView, a.Str("level"));
+            Level lv = Rv.LevelOrDefault(doc, c.ActiveView, a.Str("level"));
             bool framing = Rv.Bic(sym.Category) == BuiltInCategory.OST_StructuralFraming;
             StructuralType st = framing ? (a.Bool("brace", false) ? StructuralType.Brace : StructuralType.Beam) : StructuralType.NonStructural;
             var ids = new List<ElementId>();

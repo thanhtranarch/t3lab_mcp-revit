@@ -15,7 +15,7 @@ namespace T3LabRevit.Core
             Registry.Add("manage_view_templates", "View templates", ToolKind.Write,
                 "action=list (templates and how many views use each), apply (template + views: assigns it), apply_once (copies its " +
                 "settings, no link), remove (views: no template), create_from_view (view + name), transfer (from_document: title " +
-                "of another open model, templates: names or * ; copies them into the active model).",
+                "of another open model, templates: names or * ; copies them into the model).",
                 ObjR("action", P("action", Enum("What to do", "list", "apply", "apply_once", "remove", "create_from_view", "transfer")),
                     P("template", Str("Template name or id")), P("views", Strs("View names or ids")), P("view", Str("create_from_view: source view")),
                     P("name", Str("create_from_view: template name")), P("from_document", Str("transfer: source model title")),
@@ -133,7 +133,7 @@ namespace T3LabRevit.Core
                 }
                 case "create_from_view":
                 {
-                    View src = Rv.View(doc, a.Str("view"), c.UiDoc.ActiveView);
+                    View src = Rv.View(doc, a.Str("view"), c.ActiveView);
                     View t = src.CreateViewTemplate();
                     if (a.Has("name")) t.Name = a.Str("name");
                     return new Dictionary<string, object> { ["id"] = Id.V(t.Id), ["name"] = t.Name, ["element_ids"] = new List<object> { Id.V(t.Id) } };
@@ -169,7 +169,7 @@ namespace T3LabRevit.Core
             var result = new Dictionary<string, object> { ["filters"] = rows };
             if (a.Has("view"))
             {
-                View v = Rv.View(doc, a.Str("view"), c.UiDoc.ActiveView);
+                View v = Rv.View(doc, a.Str("view"), c.ActiveView);
                 result["on_view"] = v.GetFilters().Select(id => (object)new Dictionary<string, object>
                 {
                     ["id"] = Id.V(id), ["name"] = doc.GetElement(id)?.Name, ["visible"] = v.GetFilterVisibility(id),
@@ -299,7 +299,7 @@ namespace T3LabRevit.Core
         static object ManageView(ToolContext c, Args a)
         {
             Document doc = c.Doc;
-            View v = Rv.View(doc, a.Str("view"), c.UiDoc.ActiveView);
+            View v = Rv.View(doc, a.Str("view"), c.ActiveView);
             var changed = new List<string>();
             if (a.Has("name")) { v.Name = a.Str("name"); changed.Add("name"); }
             if (a.Has("scale")) { v.Scale = a.Int("scale", 100); changed.Add("scale"); }

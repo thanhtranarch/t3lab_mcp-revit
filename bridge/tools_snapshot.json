@@ -3,7 +3,7 @@
   {
    "name": "get_revit_context",
    "title": "Revit context",
-   "description": "Start here. Revit version, open models (active one first), and for the active model: active view, selection, levels, project info, worksharing and length units. All tools use millimetres, m2, m3 and degrees; element ids are integers.",
+   "description": "Start here. Revit version, open models (active, in other windows, or in the background), and for the active model: active view, selection, levels, project info, worksharing and length units. All tools use millimetres, m2, m3 and degrees; element ids are integers.",
    "inputSchema": {
     "type": "object",
     "properties": {}
@@ -66,9 +66,34 @@
    }
   },
   {
+   "name": "ControlTool",
+   "title": "Agent Cursors",
+   "description": "The T3Lab Agent Cursors bar that shows the user what AI apps do in Revit. action=status (default): on or off, paused, options and each agent with its state. on: turn it on and show the bar. pause: refuse changes from every AI app until the user presses Resume. Only the user turns it off or resumes, on the bar or the ribbon.",
+   "inputSchema": {
+    "type": "object",
+    "properties": {
+     "action": {
+      "type": "string",
+      "enum": [
+       "status",
+       "on",
+       "pause"
+      ],
+      "description": "What to do (default status)"
+     }
+    }
+   },
+   "annotations": {
+    "title": "Agent Cursors",
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "openWorldHint": false
+   }
+  },
+  {
    "name": "manage_document",
    "title": "Open, save, switch or close a model",
-   "description": "Model files. action=open (path; detach=true detaches a central model, audit=true audits), activate (title or path of an open model: makes it the active one), save (active or title), save_as (path, overwrite), close (title of a model that is NOT active; save=true saves first), sync (synchronize with central: comment, relinquish=true), new (save_as path, optional template path; the new model becomes active).",
+   "description": "Model files. action=open (path; detach=true detaches a central model, audit=true audits; background=true opens it without a window and without switching: work in it with revit_document=<title>, then save / close it here), activate (title or path of an open model: makes it the active one), save (active or title), save_as (path, overwrite), close (title of a model that is NOT active; save=true saves first), sync (synchronize with central: comment, relinquish=true), new (save_as path, optional template path; the new model becomes active, or stays in the background with background=true).",
    "inputSchema": {
     "type": "object",
     "properties": {
@@ -100,6 +125,10 @@
      "detach": {
       "type": "boolean",
       "description": "open: detach from central (preserve worksets)"
+     },
+     "background": {
+      "type": "boolean",
+      "description": "open / new: keep it out of sight, the active model stays active (default false)"
      },
      "audit": {
       "type": "boolean",
@@ -136,7 +165,7 @@
   {
    "name": "list_views",
    "title": "List views",
-   "description": "Views of the active model (no sheets: use list_sheets). Filter by type (FloorPlan, CeilingPlan, EngineeringPlan, AreaPlan, Section, Elevation, ThreeD, Drafting, Legend, Schedule, DraftingView), name, level or placement on a sheet.",
+   "description": "Views of the model (no sheets: use list_sheets). Filter by type (FloorPlan, CeilingPlan, EngineeringPlan, AreaPlan, Section, Elevation, ThreeD, Drafting, Legend, Schedule, DraftingView), name, level or placement on a sheet.",
    "inputSchema": {
     "type": "object",
     "properties": {
@@ -167,6 +196,10 @@
      "offset": {
       "type": "integer",
       "description": "Rows to skip, for paging"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -247,6 +280,10 @@
      "template": {
       "type": "string",
       "description": "View template name to apply"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -347,6 +384,10 @@
      "view": {
       "type": "string",
       "description": "View name or id (default active)"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -378,6 +419,10 @@
      "save_path": {
       "type": "string",
       "description": "Optional .png path to keep"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -391,7 +436,7 @@
   {
    "name": "query_elements",
    "title": "Find elements",
-   "description": "Find model elements in the active model. Filters combine: categories (Walls, Doors, OST_StructuralColumns...), class (Wall, Floor, FamilyInstance...), in_view (only what the active view shows), selection (only the selected elements), level, type_contains (family or type name), name_contains, where [{parameter, op: eq|ne|contains|gt|lt|gte|lte|empty|not_empty, value}]. detail=count (default on an unfiltered query) | summary | full (location + bounding box). fields = parameter values to add per element. group_by=category|family|type|level returns counts. Numbers are mm, m2, m3, degrees.",
+   "description": "Find model elements. Filters combine: categories (Walls, Doors, OST_StructuralColumns...), class (Wall, Floor, FamilyInstance...), in_view (only what the active view shows), selection (only the selected elements), level, type_contains (family or type name), name_contains, where [{parameter, op: eq|ne|contains|gt|lt|gte|lte|empty|not_empty, value}]. detail=count (default on an unfiltered query) | summary | full (location + bounding box). fields = parameter values to add per element. group_by=category|family|type|level returns counts. Numbers are mm, m2, m3, degrees.",
    "inputSchema": {
     "type": "object",
     "properties": {
@@ -483,6 +528,10 @@
      "offset": {
       "type": "integer",
       "description": "Rows to skip, for paging"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -514,6 +563,10 @@
      "parameters": {
       "type": "boolean",
       "description": "List parameters (default true)"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -557,6 +610,10 @@
      "offset": {
       "type": "integer",
       "description": "Rows to skip, for paging"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -570,10 +627,15 @@
   {
    "name": "list_datums",
    "title": "Levels and grids",
-   "description": "All levels (name, elevation mm) and grids (name, start/end mm) of the active model.",
+   "description": "All levels (name, elevation mm) and grids (name, start/end mm) of the model.",
    "inputSchema": {
     "type": "object",
-    "properties": {}
+    "properties": {
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
+     }
+    }
    },
    "annotations": {
     "title": "Levels and grids",
@@ -623,6 +685,10 @@
        "type"
       ],
       "description": "instance (default) or type"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -684,6 +750,10 @@
      "structural": {
       "type": "boolean",
       "description": "Structural wall"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -734,6 +804,10 @@
      "offset": {
       "type": "number",
       "description": "Height offset from the level in mm"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -769,6 +843,10 @@
      "plan": {
       "type": "boolean",
       "description": "Create a floor plan per level (default true)"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -806,6 +884,10 @@
        }
       },
       "description": "Grids to create"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -859,6 +941,10 @@
      "offset": {
       "type": "number",
       "description": "Elevation from level in mm"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -911,6 +997,10 @@
      "all": {
       "type": "boolean",
       "description": "Create rooms in all closed regions of the level"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -935,6 +1025,10 @@
      "overwrite": {
       "type": "boolean",
       "description": "Replace an existing family of that name"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1019,6 +1113,10 @@
      "copy": {
       "type": "boolean",
       "description": "mirror: keep the originals"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1050,6 +1148,10 @@
      "dry_run": {
       "type": "boolean",
       "description": "Report only, delete nothing"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1109,6 +1211,10 @@
      "leader": {
       "type": "boolean",
       "description": "tag: add a leader"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1125,7 +1231,7 @@
   {
    "name": "list_sheets",
    "title": "List sheets",
-   "description": "Sheets of the active model: number, name, title block, the views and schedules placed on each, current revision.",
+   "description": "Sheets of the model: number, name, title block, the views and schedules placed on each, current revision.",
    "inputSchema": {
     "type": "object",
     "properties": {
@@ -1144,6 +1250,10 @@
      "offset": {
       "type": "integer",
       "description": "Rows to skip, for paging"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -1179,6 +1289,10 @@
      "title_block": {
       "type": "string",
       "description": "Title block type label or name"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1217,6 +1331,10 @@
        }
       },
       "description": "Views to place"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1253,6 +1371,10 @@
      "delimiter": {
       "type": "string",
       "description": "CSV delimiter, default comma"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -1284,6 +1406,10 @@
      "name": {
       "type": "string",
       "description": "Schedule name"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1339,6 +1465,10 @@
      "combine": {
       "type": "boolean",
       "description": "pdf: one file for everything (default true)"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1356,10 +1486,15 @@
   {
    "name": "model_overview",
    "title": "Model health overview",
-   "description": "One-call audit of the active model: element counts per category (top 40), warnings (count + top kinds), families, in-place families, views / sheets / views not on sheets, rooms (unplaced / not enclosed), links, imported CAD, worksets, file size.",
+   "description": "One-call audit of the model: element counts per category (top 40), warnings (count + top kinds), families, in-place families, views / sheets / views not on sheets, rooms (unplaced / not enclosed), links, imported CAD, worksets, file size.",
    "inputSchema": {
     "type": "object",
-    "properties": {}
+    "properties": {
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
+     }
+    }
    },
    "annotations": {
     "title": "Model health overview",
@@ -1382,6 +1517,10 @@
      "limit": {
       "type": "integer",
       "description": "Max rows returned (default 200)"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -1402,6 +1541,10 @@
      "count": {
       "type": "boolean",
       "description": "Count elements per workset (slower on big models)"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -1456,6 +1599,10 @@
      "move_to": {
       "type": "string",
       "description": "delete: workset that receives the elements"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1486,6 +1633,10 @@
      "workset": {
       "type": "string",
       "description": "Workset name"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1506,7 +1657,12 @@
    "description": "Revit links (type, path, loaded, instances, pinned) and CAD imports / links (name, view-specific, owner view, pinned).",
    "inputSchema": {
     "type": "object",
-    "properties": {}
+    "properties": {
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
+     }
+    }
    },
    "annotations": {
     "title": "List linked models and CAD",
@@ -1553,6 +1709,10 @@
        "type": "integer"
       },
       "description": "Element ids (from query_elements, get_selection or a create tool)"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1612,6 +1772,10 @@
      "new_name": {
       "type": "string",
       "description": "rename: new name"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1643,6 +1807,10 @@
      "limit": {
       "type": "integer",
       "description": "Max rows returned (default 200)"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -1704,6 +1872,10 @@
      "material_class": {
       "type": "string",
       "description": "Material class, e.g. Concrete"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1739,6 +1911,10 @@
      "by_category": {
       "type": "boolean",
       "description": "Split each material by category"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -1793,6 +1969,10 @@
        "type": "string"
       },
       "description": "Sheet numbers, or * for all"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1828,6 +2008,10 @@
      },
      "value": {
       "description": "Value to store (JSON)"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1844,7 +2028,7 @@
   {
    "name": "manage_view_templates",
    "title": "View templates",
-   "description": "action=list (templates and how many views use each), apply (template + views: assigns it), apply_once (copies its settings, no link), remove (views: no template), create_from_view (view + name), transfer (from_document: title of another open model, templates: names or * ; copies them into the active model).",
+   "description": "action=list (templates and how many views use each), apply (template + views: assigns it), apply_once (copies its settings, no link), remove (views: no template), create_from_view (view + name), transfer (from_document: title of another open model, templates: names or * ; copies them into the model).",
    "inputSchema": {
     "type": "object",
     "properties": {
@@ -1889,6 +2073,10 @@
        "type": "string"
       },
       "description": "transfer: template names, or *"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -1912,6 +2100,10 @@
      "view": {
       "type": "string",
       "description": "Also list the filters on this view (name or id)"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -1973,6 +2165,10 @@
      "visible": {
       "type": "boolean",
       "description": "false hides the filtered elements in those views"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -2054,6 +2250,10 @@
      "section_box_active": {
       "type": "boolean",
       "description": "3D: section box on"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -2070,7 +2270,12 @@
    "description": "Project and shared parameters bound in the model: name, type, instance or type, categories, group, shared GUID.",
    "inputSchema": {
     "type": "object",
-    "properties": {}
+    "properties": {
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
+     }
+    }
    },
    "annotations": {
     "title": "List project parameters",
@@ -2128,6 +2333,10 @@
        "type": "string"
       },
       "description": "Categories"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -2163,6 +2372,10 @@
      "limit": {
       "type": "integer",
       "description": "Max rows returned (default 200)"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -2206,6 +2419,10 @@
        }
       },
       "description": "Element id pairs"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -2239,6 +2456,10 @@
        }
       },
       "description": "Split points [x, y] or [x, y, z] mm"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -2274,6 +2495,10 @@
      "keep_position": {
       "type": "boolean",
       "description": "Keep the elevation (default true)"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -2344,6 +2569,10 @@
      "dry_run": {
       "type": "boolean",
       "description": "Preview only"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -2375,6 +2604,10 @@
      "leader": {
       "type": "boolean",
       "description": "Add leaders"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -2418,6 +2651,10 @@
      "dry_run": {
       "type": "boolean",
       "description": "Preview only"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -2456,6 +2693,10 @@
      "brace": {
       "type": "boolean",
       "description": "Place as braces instead of beams"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -2502,6 +2743,10 @@
      "types": {
       "type": "boolean",
       "description": "Copy types (default true when class ends with Type)"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [
@@ -2552,6 +2797,10 @@
      "limit": {
       "type": "integer",
       "description": "Max rows returned (default 200)"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     }
    },
@@ -2592,6 +2841,10 @@
      "dry_run": {
       "type": "boolean",
       "description": "import: preview only"
+     },
+     "revit_document": {
+      "type": "string",
+      "description": "Model to work in: title or path of an open model, also one opened in the background (manage_document open background=true). Default: the active model. It does not switch the model the user sees"
      }
     },
     "required": [

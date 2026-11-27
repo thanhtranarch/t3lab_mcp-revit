@@ -103,7 +103,7 @@ namespace T3LabRevit.Core
             foreach (var s in specs)
             {
                 Args w = s.Item3;
-                Level lv = Rv.LevelOrDefault(doc, c.UiDoc.ActiveView, w.Str("level") ?? a.Str("level"));
+                Level lv = Rv.LevelOrDefault(doc, c.ActiveView, w.Str("level") ?? a.Str("level"));
                 WallType wt = WallTypeOf(doc, w.Str("type") ?? a.Str("type"));
                 XYZ p0 = new XYZ(s.Item1.X, s.Item1.Y, lv.Elevation), p1 = new XYZ(s.Item2.X, s.Item2.Y, lv.Elevation);
                 if (p0.DistanceTo(p1) < U.Ft(10)) throw new ToolError("A wall is shorter than 10 mm.");
@@ -134,7 +134,7 @@ namespace T3LabRevit.Core
         {
             Document doc = c.Doc;
             bool ceiling = string.Equals(a.Str("kind"), "ceiling", StringComparison.OrdinalIgnoreCase);
-            Level lv = Rv.LevelOrDefault(doc, c.UiDoc.ActiveView, a.Str("level"));
+            Level lv = Rv.LevelOrDefault(doc, c.ActiveView, a.Str("level"));
             CurveLoop loop;
             if (a.Has("room_id"))
             {
@@ -233,7 +233,7 @@ namespace T3LabRevit.Core
             BuiltInCategory bic = a.Has("category") ? Rv.Bic(Rv.Category(doc, a.Str("category"))) : BuiltInCategory.INVALID;
             FamilySymbol sym = Rv.TypeOf<FamilySymbol>(doc, a.ReqStr("type"), bic);
             if (!sym.IsActive) { sym.Activate(); doc.Regenerate(); }
-            Level lv = Rv.LevelOrDefault(doc, c.UiDoc.ActiveView, a.Str("level"));
+            Level lv = Rv.LevelOrDefault(doc, c.ActiveView, a.Str("level"));
             BuiltInCategory cat = Rv.Bic(sym.Category);
             bool hosted = cat == BuiltInCategory.OST_Doors || cat == BuiltInCategory.OST_Windows;
             bool column = cat == BuiltInCategory.OST_StructuralColumns;
@@ -274,7 +274,7 @@ namespace T3LabRevit.Core
         static object Rooms(ToolContext c, Args a)
         {
             Document doc = c.Doc;
-            Level lv = Rv.LevelOrDefault(doc, c.UiDoc.ActiveView, a.Str("level"));
+            Level lv = Rv.LevelOrDefault(doc, c.ActiveView, a.Str("level"));
             var ids = new List<ElementId>();
             if (a.Bool("all", false))
             {

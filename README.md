@@ -100,6 +100,45 @@ thứ tự, icon (T3 Space Line của t3lab-revit-api, theo theme sáng / tối 
 - **Select changes**: chọn (và zoom) mọi element AI đã tạo/sửa trong model này. Thay đổi lấy từ sự kiện
   `DocumentChanged` của Revit, nên đúng cả khi tool không trả id.
 
+## Lệnh: nút, lệnh gõ, CLI, tool MCP
+
+Mọi việc trên ribbon đều làm được từ dòng lệnh (`B` = `python -I "%APPDATA%\T3LabRevitMCP\bridge.py"`) và — trừ Start / Stop, Connect AI — từ AI app qua MCP. Cùng bảng ở README của T3Lab CAD MCP.
+
+| Việc | Revit (Add-Ins › T3Lab MCP) | AutoCAD (Add-ins › T3Lab MCP · lệnh gõ) | Dòng lệnh | Tool MCP |
+|---|---|---|---|---|
+| Bật / tắt server | Start / Stop | Start / Stop · `T3MCP` (`T3MCPSTART`, `T3MCPSTOP`) | — (server nằm trong app; `B status` cho biết có chạy không) | — |
+| Agent Cursors | Agent Cursors | Agent Cursors · `T3CURSORS` | `B cursors status\|on\|pause` | `agent_cursors` (status · on · pause) |
+| Tắt Agent Cursors · Resume | nút trên thanh / ribbon | nút trên bảng / `T3CURSORS` | — (chỉ người dùng) | — (chỉ người dùng) |
+| Kết nối AI app | Connect AI | Connect AI · `T3MCPCONNECT` | `B connect [--check] [--remove]` | — |
+| Trạng thái | Status | Status · `T3MCPSTATUS` | `B status` | `get_revit_context` / `get_status` |
+| Nạp lại core | Reload | Reload · `T3MCPRELOAD` | `B reload` | `reload_addin` |
+| Mọi tool | — | — | `B call <tool> --tham_so=giá_trị` | chính tool đó |
+| Kiểm tra file xuất | — | — | `B verify <file\|thư mục> --expect=N` | — |
+
+Bật/tắt Agent Cursors và Resume chỉ người dùng làm được: AI app không được giấu việc của mình hay gỡ Pause của người dùng.
+
+## Nhiều file cùng lúc · làm việc trên nền
+
+- **Không cần chuyển file:** tool nào có tham số `revit_document` (`B tools` đánh dấu `*`; 55 / 64 tool) làm việc trong bất kỳ model nào đang mở — file đang active, file khác đang mở, hoặc file mở **trên nền** — mà không đổi file người dùng đang xem. Kết quả ghi `document` + `active_document: false`; thanh Agent Cursors ghi "· in <file>".
+- **Mở trên nền:** `manage_document action=open path=... background=true` (hoặc `action=new ... background=true`) — không có cửa sổ, người dùng không thấy, file đang active giữ nguyên. Lưu / đóng: `manage_document action=save|save_as|sync|close title=<tên>`.
+- **Tool cần file active** (không có `revit_document`: `set_active_view`, `get_selection`, `set_selection`, `send_code_to_revit`; `query_elements selection=true` / `in_view=true`) gọi kèm `revit_document` của file khác → bị từ chối trước khi chạy: `{"error_code": "needs_active_document", "nothing_ran": true}`.
+- Danh sách tool nào làm được ở đâu được chứng minh từ mã nguồn: `python -I scripts/check_tool_scopes.py` (CI chạy); tool khai `scope: ToolScope.Active` trong `Registry.Add`.
+- Giới hạn: Revit chỉ chạy một lời gọi API một lúc, nên nhiều file được xử lý **xen kẽ** (hàng đợi công bằng), không song song trong một Revit. Muốn song song thật: mở nhiều Revit (mỗi cái một port, `B status` liệt kê), ghim bằng `--port`.
+- Model mở trên nền không có view active: tool cần view thì truyền `view`. Linked model chỉ đọc. **NEEDS VERIFICATION trong Revit**: `manage_document action=activate` cho model mở trên nền.
+
+## Dòng lệnh (CLI)
+
+```
+B help                                         # mọi lệnh
+B tools wall                                   # tool khớp từ khoá, * = làm được trong file khác
+B help set_parameter                        # tham số: kiểu, bắt buộc, lựa chọn
+B call list_sheets --document="Project B" --out=tsv
+B call list_views --out=tsv --pick=id,name # một dòng một phần tử, đọc được bằng Excel / awk
+B verify "D:\Export" --ext=pdf,dwg --expect=12   # file xuất có đủ, không rỗng, đúng định dạng
+```
+
+Cùng đường đi với MCP (tier, audit, hàng đợi, Agent Cursors ghi "cli"). Exit code: 0 xong · 1 tool / Revit từ chối hoặc lỗi (`error_code`) · 2 sai lệnh / tham số (không có gì chạy).
+
 ## Nhiều AI cùng lúc · tuỳ chọn bridge
 
 Revit chỉ chạy một lời gọi một lúc. Add-in xếp hàng công bằng (`Conductor.cs`): người đang chat trước bot, rồi xoay vòng
@@ -119,7 +158,7 @@ Tuỳ chọn thêm vào `args` của server `t3lab-revit` trong config AI app (h
 | `--queue-wait=45` | `T3LAB_QUEUE_WAIT_S` | Thời gian chờ tối đa (giây) để tới lượt |
 | `--audit=0` | `T3LAB_AUDIT=0` | Tắt nhật ký `%APPDATA%\T3LabRevitMCP\audit\<ngày>.jsonl` (mỗi lời gọi một dòng: agent, tool, ok / error_code, thời gian; không ghi tham số) |
 
-## Tool (63)
+## Tool (64)
 
 Đơn vị trong mọi tool: **mm, m², m³, độ**; điểm `[x, y]` / `[x, y, z]` mm; element theo id số nguyên. Mỗi thay đổi =
 **1 bước Undo**; warning của Revit được bỏ qua và báo lại (`revit_warnings`), error thì rollback.
@@ -139,7 +178,7 @@ Tuỳ chọn thêm vào `args` của server `t3lab-revit` trong config AI app (h
 | Ghi chú | `create_annotation` (text · detail line · tag · dimension qua grid/tường) |
 | Sheet / schedule | `list_sheets`, `create_sheets`, `place_views_on_sheet`, `get_schedule_data` (+ CSV cho Excel), `create_schedule` |
 | Xuất | `export_documents` (PDF gộp/tách · DWG · IFC) |
-| Agent Cursors | `t3lab_narrate` (mục tiêu + các bước hiện trên thanh) |
+| Agent Cursors | `t3lab_narrate` (mục tiêu + các bước hiện trên thanh), `agent_cursors` (status · on · pause) |
 | Bridge | `list_revit_instances`, `switch_revit_instance` (nhiều Revit cùng lúc; mỗi Revit 1 port 48910–48918) |
 
 ### Ví dụ yêu cầu

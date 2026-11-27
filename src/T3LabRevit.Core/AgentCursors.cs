@@ -60,7 +60,7 @@ namespace T3LabRevit.Core
     /// </summary>
     internal static class AgentCursors
     {
-        public const string NarrateTool = "t3lab_narrate";
+        public const string NarrateTool = "t3lab_narrate", ControlTool = "agent_cursors";
         const int FeedSize = 20, PlanMax = 8, TaskMax = 60, GoalMax = 90, MaxCapture = 200, MaxTouched = 5000, MaxBoxes = 12, MaxPath = 8;
         /// <summary>After a call, the agent is "thinking" (waiting for its model) this long, then idle.</summary>
         internal const double ThinkS = 20, BlockedAfterS = 2;
@@ -247,7 +247,7 @@ namespace T3LabRevit.Core
 
         public static AgentStep Begin(ToolDef def, Args args, string client)
         {
-            if (!Enabled || def.Name == NarrateTool) return null;
+            if (!Enabled || def.Name == NarrateTool || def.Name == ControlTool) return null;
             var step = new AgentStep
             {
                 Tool = def.Name,
@@ -288,6 +288,18 @@ namespace T3LabRevit.Core
             bool was = step.Queued;
             step.Queued = false;
             if (was) Refresh(false);
+        }
+
+        /// <summary>The model a call works in (main thread, once resolved); another than the active one shows on its caption.</summary>
+        public static void SetDocument(AgentStep step, string title, bool active)
+        {
+            if (step == null || string.IsNullOrEmpty(title)) return;
+            step.Document = title;
+            if (!active)
+            {
+                step.Caption += " · in " + title;
+                Refresh(false);
+            }
         }
 
         public static void OnMain(AgentStep step)
@@ -333,7 +345,7 @@ namespace T3LabRevit.Core
 
         static readonly HashSet<string> SafeWhilePaused = new HashSet<string>
         {
-            NarrateTool, "set_active_view", "set_selection", "export_image", "reload_addin",
+            NarrateTool, ControlTool, "set_active_view", "set_selection", "export_image", "reload_addin",
         };
 
         /// <summary>While paused: refuse anything that changes the model or writes files. Never throws.</summary>
@@ -414,14 +426,14 @@ namespace T3LabRevit.Core
         // ---------------------------------------------------------------- change capture (main thread)
 
         /// <summary>Before a call runs: arm DocumentChanged capture for writes, remember the boxes of what a delete / move names.</summary>
-        public static void StartCapture(AgentStep step, ToolDef def, UIApplication app)
+        /// <summary>doc: the model the call works in (the pinned one, not always the active one).</summary>
+        public static void StartCapture(AgentStep step, ToolDef def, Document doc)
         {
             _capturing = null;
             if (step == null || def.Kind == ToolKind.Read) return;
             _capturing = step;
             try
             {
-                Document doc = app.ActiveUIDocument?.Document;
                 if (doc == null || (def.Name != "delete_elements" && def.Name != "transform_elements")) return;
                 foreach (long id in step.Named.Take(MaxBoxes))
                 {
@@ -989,7 +1001,50 @@ namespace T3LabRevit.Core
                     P("step", Int("The task you are on now, 1-based")),
                     P("done", Bool("All tasks are finished"))),
                 NarrateHandler, needsDocument: false, background: true);
+
+            Registry.Add(ControlTool, "Agent Cursors", ToolKind.App,
+                "The T3Lab Agent Cursors bar that shows the user what AI apps do in Revit. action=status (default): on or off, paused, " +
+                "options and each agent with its state. on: turn it on and show the bar. pause: refuse changes from every AI app until the " +
+                "user presses Resume. Only the user turns it off or resumes, on the bar or the ribbon.",
+                Obj(P("action", Enum("What to do (default status)", "status", "on", "pause"))),
+                ControlHandler, needsDocument: false, background: true);
         }
+
+        static object ControlHandler(ToolContext unused, Args a)
+        {
+            string action = (a.Str("action") ?? "status").Trim().ToLowerInvariant();
+            switch (action)
+            {
+                case "status": break;
+                case "on":
+                    if (!Enabled) SetEnabled(true);
+                    else Refresh(true);
+                    break;
+                case "pause":
+                    if (!Enabled) SetEnabled(true);
+                    SetPaused(true);
+                    break;
+                case "off":
+                case "resume":
+                    // the bar is the user's oversight: an AI app never hides its own work or lifts the user's pause
+                    throw new ToolError("Only the user turns Agent Cursors off or resumes AI changes, on the bar or the ribbon.");
+                default:
+                    throw new ToolError("action: status, on or pause.");
+            }
+            View v = Snapshot();
+            return new Dictionary<string, object>
+            {
+                ["enabled"] = Enabled,
+                ["paused"] = v.Paused,
+                ["show_on_model"] = v.ShowOnModel,
+                ["follow"] = v.Follow,
+                ["agents"] = v.Agents.Select(x => (object)new Dictionary<string, object>
+                {
+                    ["name"] = x.Name, ["state"] = x.Status, ["calls"] = x.Calls, ["changes"] = x.Changes, ["goal"] = x.Goal,
+                }).ToList(),
+            };
+        }
+
 
         static object NarrateHandler(ToolContext unused, Args a)
         {

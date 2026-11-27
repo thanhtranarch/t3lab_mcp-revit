@@ -92,6 +92,7 @@ namespace T3LabRevit.Core
             bool ok = false, refused = false, busy = false;
             string error = null;
             object value = null;
+            string pinned = args.Take(Registry.DocumentPin);   // another open model; resolved on Revit's thread
             int deadlineMs = queueWaitS > 0 ? (int)Math.Min(queueWaitS * 1000, MaxQueueWaitMs) : DefaultQueueWaitMs;
             try
             {
@@ -124,8 +125,7 @@ namespace T3LabRevit.Core
                                 refused = true;
                                 throw new ToolError(AgentCursors.PausedMessage);
                             }
-                            AgentCursors.StartCapture(step, def, app);
-                            try { return Execute(def, args, app); }
+                            try { return Execute(def, args, app, pinned, step); }
                             finally { AgentCursors.EndCapture(step); }
                         }, startMs);
                     }
@@ -147,6 +147,13 @@ namespace T3LabRevit.Core
                 error = ns.Message;
                 return Coded("revit_busy", ns.Message, true,
                     "Ask the user to finish or cancel what is open in Revit (a dialog, an edit mode), then retry.", 10);
+            }
+            catch (NeedsActiveException na)
+            {
+                outcome = "needs active document";
+                error = na.Message;
+                return Coded("needs_active_document", na.Message, true,
+                    "Call again without revit_document, after manage_document action=activate makes that model the active one.");
             }
             catch (ToolError te) when (refused)
             {
@@ -228,10 +235,25 @@ namespace T3LabRevit.Core
             return ErrorResult(Json.Write(d));
         }
 
-        static object Execute(ToolDef def, Args args, UIApplication app)
+        static object Execute(ToolDef def, Args args, UIApplication app, string pinned, AgentStep step)
         {
             UIDocument uidoc = app.ActiveUIDocument;
             Document doc = uidoc?.Document;
+            if (pinned != null)
+            {
+                // another open model, or one opened in the background: the call works there and the user's view stays
+                Document target = Documents.Find(app, pinned);
+                if (doc == null || !target.Equals(doc))
+                {
+                    if (!Registry.TakesPin(def))
+                        throw new NeedsActiveException($"{def.Name} works in the active model only, and '{target.Title}' is not active in Revit.");
+                    if (target.IsLinked) throw new ToolError($"'{target.Title}' is loaded as a link: open it as a model to work in it.");
+                    doc = target;
+                    uidoc = null;
+                }
+            }
+            AgentCursors.SetDocument(step, doc?.Title, uidoc != null);
+            AgentCursors.StartCapture(step, def, doc);   // after the pin: "before" boxes come from the model the call works in
             if (def.NeedsDocument && doc == null)
                 throw new ToolError("No model is open in Revit. Ask the user to open one, or use manage_document action=open.");
 
@@ -249,6 +271,12 @@ namespace T3LabRevit.Core
 
             if (ctx.Warnings.Count > 0 && result is Dictionary<string, object> d && !d.ContainsKey("revit_warnings"))
                 d["revit_warnings"] = ctx.Warnings.Distinct().Take(20).ToList();
+            // say where it happened when that is not the model the user looks at
+            if (uidoc == null && doc != null && result is Dictionary<string, object> r && !r.ContainsKey("document"))
+            {
+                r["document"] = doc.Title;
+                r["active_document"] = false;
+            }
             return result;
         }
 

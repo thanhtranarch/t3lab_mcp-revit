@@ -25,8 +25,14 @@ Rules:
 - Gates (CI runs them all): build every year (Core, Loader, Scripting) with `-warnaserror`, `python -I scripts/gen_tools_snapshot.py --check`,
   `python -I tests/smoke_bridge.py`, `python -I tests/test_register.py`, and the Windows install job. After changing `Conductor.cs`:
   `dotnet run --project tests/conductor_test` (the queue's ordering, deadline and one-holder rule, no Revit needed).
+- Every tool declares where it can run (`scope:` in `Registry.Add`): `ToolScope.Any` (default: any open model, also one opened
+  in the background, pinned with `revit_document`) or `ToolScope.Active` (the UI: selection, the active view, the Python
+  engine). Use `c.ActiveView` (null outside the active model) and `c.RequireUi(...)` / `c.SelectedIds()` for a branch that needs
+  the UI, never `c.UiDoc` in an Any tool: `python -I scripts/check_tool_scopes.py` (CI) proves it.
+- The bridge is also a command line (`bridge.py help`: status, tools, help, call, cursors, reload, connect, verify); every ribbon
+  action has one. A new action gets a CLI command and, unless it is the user's (Agent Cursors off / Resume), an MCP tool.
 - Error results an agent acts on are JSON `{error_code, message, retryable, nothing_ran, hint}` (add-in: `revit_busy`,
-  `paused_by_user`; bridge: `tier_denied`, `tool_denied`, `revit_not_running`, `timeout`, `bridge_error`). Keep the codes stable.
+  `paused_by_user`, `needs_active_document`; bridge: `tier_denied`, `tool_denied`, `revit_not_running`, `timeout`, `bridge_error`). Keep the codes stable.
 - Shared with [T3Lab CAD MCP](https://github.com/thanhtranarch/t3lab_mcp-cad), the same file but for the namespace:
   `Core/Conductor.cs`, `Core/T3Style.cs` (bar palettes, action / agent colours, every word on the Agent Cursors bar) and
   `Loader/T3Icons.cs` (ribbon icons, T3 Space Line of t3lab-revit-api). The ribbon (buttons, order, tooltips), the bar

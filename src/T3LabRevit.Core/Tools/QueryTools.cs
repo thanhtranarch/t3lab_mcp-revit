@@ -12,7 +12,7 @@ namespace T3LabRevit.Core
         public static void Register()
         {
             Registry.Add("query_elements", "Find elements", ToolKind.Read,
-                "Find model elements in the active model. Filters combine: categories (Walls, Doors, OST_StructuralColumns...), class (Wall, " +
+                "Find model elements. Filters combine: categories (Walls, Doors, OST_StructuralColumns...), class (Wall, " +
                 "Floor, FamilyInstance...), in_view (only what the active view shows), selection (only the selected elements), level, " +
                 "type_contains (family or type name), name_contains, where [{parameter, op: eq|ne|contains|gt|lt|gte|lte|empty|not_empty, " +
                 "value}]. detail=count (default on an unfiltered query) | summary | full (location + bounding box). fields = parameter " +
@@ -52,7 +52,7 @@ namespace T3LabRevit.Core
                 ListTypes);
 
             Registry.Add("list_datums", "Levels and grids", ToolKind.Read,
-                "All levels (name, elevation mm) and grids (name, start/end mm) of the active model.",
+                "All levels (name, elevation mm) and grids (name, start/end mm) of the model.",
                 Obj(), Datums);
         }
 
@@ -127,7 +127,9 @@ namespace T3LabRevit.Core
             bool types = a.Bool("types", false);
             List<string> cats = a.Strs("categories");
             string cls = a.Str("class");
-            View inView = a.Has("view") ? Rv.View(doc, a.Str("view"), null) : a.Bool("in_view", false) ? c.UiDoc.ActiveView : null;
+            View inView = a.Has("view") ? Rv.View(doc, a.Str("view"), null)
+                : a.Bool("in_view", false) ? c.ActiveView ?? throw new ToolError($"in_view: '{doc.Title}' has no active view here (not the active model). Give view.")
+                : null;
             bool selection = a.Bool("selection", false);
             List<Args> where = a.Objs("where");
             bool filtered = cats.Count > 0 || cls != null || inView != null || selection || a.Has("level") || a.Has("type_contains") || a.Has("name_contains") || where.Count > 0;
@@ -135,7 +137,7 @@ namespace T3LabRevit.Core
             IEnumerable<Element> elements;
             if (selection)
             {
-                elements = c.UiDoc.Selection.GetElementIds().Select(doc.GetElement).Where(e => e != null);
+                elements = c.SelectedIds().Select(doc.GetElement).Where(e => e != null);
                 if (cats.Count > 0 || cls != null)
                 {
                     var catIds = new HashSet<long>(cats.Select(n => Id.V(Rv.Category(doc, n).Id)));
