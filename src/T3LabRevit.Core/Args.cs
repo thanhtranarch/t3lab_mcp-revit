@@ -33,6 +33,14 @@ namespace T3LabRevit.Core
 
         public object Raw(string key) => _d.TryGetValue(key, out var v) ? v : null;
 
+        /// <summary>Takes an argument out (the revit_document pin: the tool itself never sees it).</summary>
+        public string Take(string key)
+        {
+            string value = Str(key);
+            _d.Remove(key);
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        }
+
         public string Str(string key, string def = null)
         {
             var v = Raw(key);

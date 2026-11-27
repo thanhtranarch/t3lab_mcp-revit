@@ -157,7 +157,7 @@ namespace T3LabRevit.Core
                 case "visibility":
                 {
                     Workset w = Workset(doc, a.ReqStr("name"));
-                    View v = Rv.View(doc, a.Str("view"), c.UiDoc.ActiveView);
+                    View v = Rv.View(doc, a.Str("view"), c.ActiveView);
                     v.SetWorksetVisibility(w.Id, a.Bool("visible", true) ? WorksetVisibility.Visible : WorksetVisibility.Hidden);
                     return new Dictionary<string, object> { ["view"] = v.Name, ["workset"] = w.Name, ["visible"] = a.Bool("visible", true) };
                 }
@@ -253,8 +253,9 @@ namespace T3LabRevit.Core
                         }
                         if (ext != ".dwg" && ext != ".dxf" && ext != ".dgn" && ext != ".dwf" && ext != ".sat" && ext != ".skp")
                             throw new ToolError("Supported: .rvt, .dwg, .dxf, .dgn, .dwf, .sat, .skp");
-                        View view = c.UiDoc.ActiveView;
+                        View view = c.ActiveView;
                         bool thisView = a.Bool("this_view_only", false);
+                        if (view == null && thisView) throw new ToolError($"this_view_only: '{doc.Title}' has no active view here (not the active model).");
                         ElementId id;
                         if (ext == ".dgn")
                         {
@@ -345,7 +346,7 @@ namespace T3LabRevit.Core
                 case "place":
                 {
                     GroupType t = GroupTypeOf(doc, a.ReqStr("group_type"));
-                    Level lv = Rv.LevelOrDefault(doc, c.UiDoc.ActiveView, null);
+                    Level lv = Rv.LevelOrDefault(doc, c.ActiveView, null);
                     var ids = new List<ElementId>();
                     foreach (XYZ p in a.Pts("points")) ids.Add(doc.Create.PlaceGroup(new XYZ(p.X, p.Y, lv.Elevation + p.Z), t).Id);
                     return new Dictionary<string, object> { ["placed"] = ids.Count, ["element_ids"] = Rv.IdList(ids) };

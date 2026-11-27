@@ -28,6 +28,10 @@ jobs:
               dotnet build "src/$p/$p.csproj" -c Release -nologo -v q -p:RevitYear=$y -warnaserror
             done
           done
+      - name: Fair call queue test (Conductor.cs, no host needed)
+        run: dotnet run --project tests/conductor_test -nologo
+      - name: Tool scopes (which tools may run in a document that is not the active one)
+        run: python3 -I scripts/check_tool_scopes.py
       - name: Tools snapshot matches the source
         run: python3 -I scripts/gen_tools_snapshot.py --check
       - name: Bridge smoke test (no Revit)
@@ -57,10 +61,14 @@ jobs:
           $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile("$pwd\install.ps1", [ref]$null, [ref]$errors) | Out-Null
           if ($errors) { $errors | ForEach-Object { Write-Host $_ }; exit 1 }
-      - name: Install from the zip (Revit 2024 + 2026, no AI apps)
+      - name: Install from the zip (Revit 2024 + 2026, no AI apps) over a pre-1.1.0 folder
         shell: powershell
         run: |
           # the files it leaves are the test, not its exit code
+          $old = "$env:APPDATA\T3LabRevitMCP"
+          New-Item -ItemType Directory -Force "$old\audit" | Out-Null
+          Set-Content "$old\autostart.off" "off" -Encoding ASCII
+          Set-Content "$old\audit\2026-11-01.jsonl" "{}" -Encoding ASCII
           powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Source dist\T3LabRevitMCP.zip -Years 2024,2026 -NoClients -Yes
           foreach ($y in 2024, 2026) {
             $m = "$env:APPDATA\Autodesk\Revit\Addins\$y\T3LabRevit.addin"
@@ -71,13 +79,17 @@ jobs:
             $py = Join-Path (Split-Path $dll) "scripting\T3LabRevit.Scripting.dll"
             if (-not (Test-Path $py)) { throw "missing $py" }
           }
-          if (-not (Test-Path "$env:APPDATA\T3LabRevitMCP\bridge.py")) { throw "bridge not deployed" }
-          if (-not (Test-Path "$env:APPDATA\T3LabRevitMCP\pylib\json\__init__.py")) { throw "pylib not deployed" }
+          if (-not (Test-Path "$env:APPDATA\T3LabRevit\bridge.py")) { throw "bridge not deployed" }
+          if (-not (Test-Path "$env:APPDATA\T3LabRevit\pylib\json\__init__.py")) { throw "pylib not deployed" }
+          if (-not (Test-Path "$env:APPDATA\T3LabRevit\autostart.off")) { throw "setting not moved from $old" }
+          if (-not (Test-Path "$env:APPDATA\T3LabRevit\audit\2026-11-01.jsonl")) { throw "audit not moved from $old" }
+          if (-not (Test-Path $old)) { throw "$old removed although no AI app was pointed at the new bridge (-NoClients)" }
+          Remove-Item "$env:APPDATA\T3LabRevit\autostart.off"
           exit 0
       - name: Check mode
         shell: powershell
         run: |
-          $out = powershell -NoProfile -ExecutionPolicy Bypass -File "$env:APPDATA\T3LabRevitMCP\install.ps1" -Check -Clients cursor *>&1 | Out-String
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File "$env:APPDATA\T3LabRevit\install.ps1" -Check -Clients cursor *>&1 | Out-String
           Write-Host $out
           if ($out -notmatch "Installed version : \d") { throw "check did not report the installed version" }
           if ($out -notmatch '"revit_running": false') { throw "bridge --check did not run" }
@@ -86,17 +98,20 @@ jobs:
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force "$env:USERPROFILE\.cursor" | Out-Null
-          powershell -NoProfile -ExecutionPolicy Bypass -File "$env:APPDATA\T3LabRevitMCP\install.ps1" -ConnectOnly -Clients cursor -Yes
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$env:APPDATA\T3LabRevit\install.ps1" -ConnectOnly -Clients cursor -Yes
           $cfg = Get-Content "$env:USERPROFILE\.cursor\mcp.json" -Raw | ConvertFrom-Json
           if (-not $cfg.mcpServers.'t3lab-revit-mcp') { throw "cursor not registered" }
+          if ($cfg.mcpServers.'t3lab-revit-mcp'.args[1] -notlike "*T3LabRevit/bridge.py") { throw "cursor not pointed at the new bridge" }
+          if (-not (Test-Path "$env:APPDATA\T3LabRevitMCP")) { throw "old folder removed after connecting one app only" }
           exit 0
       - name: Uninstall
         shell: powershell
         run: |
-          powershell -NoProfile -ExecutionPolicy Bypass -File "$env:APPDATA\T3LabRevitMCP\install.ps1" -Uninstall -Yes -Clients cursor
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$env:APPDATA\T3LabRevit\install.ps1" -Uninstall -Yes -Clients cursor
           if (Test-Path "$env:APPDATA\Autodesk\Revit\Addins\2024\T3LabRevit.addin") { throw "manifest left behind" }
           $cfg = Get-Content "$env:USERPROFILE\.cursor\mcp.json" -Raw | ConvertFrom-Json
           if ($cfg.mcpServers.'t3lab-revit-mcp') { throw "cursor entry left behind" }
+          foreach ($d in "T3LabRevit", "T3LabRevitMCP") { if (Test-Path "$env:APPDATA\$d") { throw "$d left behind" } }
           exit 0
 
   release:

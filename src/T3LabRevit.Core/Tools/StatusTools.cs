@@ -12,7 +12,7 @@ namespace T3LabRevit.Core
         public static void Register()
         {
             Registry.Add("get_revit_context", "Revit context", ToolKind.Read,
-                "Start here. Revit version, open models (active one first), and for the active model: active view, selection, " +
+                "Start here. Revit version, open models (active, in other windows, or in the background), and for the active model: active view, selection, " +
                 "levels, project info, worksharing and length units. All tools use millimetres, m2, m3 and degrees; element ids are integers.",
                 Obj(), GetContext, needsDocument: false);
 
@@ -26,14 +26,15 @@ namespace T3LabRevit.Core
             UIApplication app = c.App;
             Document active = c.Doc;
             var docs = new List<object>();
-            foreach (Document d in app.Application.Documents)
+            foreach (Document d in Documents.Open(app))
             {
-                if (d.IsLinked) continue;
+                bool isActive = active != null && d.Equals(active);
                 docs.Add(new Dictionary<string, object>
                 {
                     ["title"] = d.Title,
                     ["path"] = d.PathName,
-                    ["active"] = active != null && d.Equals(active),
+                    ["active"] = isActive,
+                    ["background"] = !isActive && Documents.IsBackground(d),
                     ["family"] = d.IsFamilyDocument,
                     ["workshared"] = d.IsWorkshared,
                     ["modified"] = d.IsModified,
@@ -48,6 +49,8 @@ namespace T3LabRevit.Core
                 ["user"] = app.Application.Username,
                 ["units"] = "Tool arguments and results: lengths mm, areas m2, volumes m3, angles degrees, points [x, y, z] mm in project coordinates (internal origin).",
                 ["documents"] = docs,
+                ["other_models"] = "Tools that list revit_document work in any model above without switching: pass its title. " +
+                                   "manage_document open background=true opens one out of sight.",
             };
             if (active == null)
             {
@@ -117,16 +120,18 @@ namespace T3LabRevit.Core
         public static void Register()
         {
             Registry.Add("manage_document", "Open, save, switch or close a model", ToolKind.App,
-                "Model files. action=open (path; detach=true detaches a central model, audit=true audits), activate (title or path of an " +
+                "Model files. action=open (path; detach=true detaches a central model, audit=true audits; background=true opens it " +
+                "without a window and without switching: work in it with revit_document=<title>, then save / close it here), activate (title or path of an " +
                 "open model: makes it the active one), save (active or title), save_as (path, overwrite), close (title of a model that is " +
                 "NOT active; save=true saves first), sync (synchronize with central: comment, relinquish=true), new (save_as path, " +
-                "optional template path; the new model becomes active).",
+                "optional template path; the new model becomes active, or stays in the background with background=true).",
                 ObjR("action",
                     P("action", Enum("What to do", "open", "activate", "save", "save_as", "close", "sync", "new")),
                     P("path", Str("File path of the .rvt for open / save_as / new")),
                     P("title", Str("Title of an open model (from get_revit_context) for activate / save / close")),
                     P("template", Str("Template .rte for new (default: the project template set in Revit)")),
                     P("detach", Bool("open: detach from central (preserve worksets)")),
+                    P("background", Bool("open / new: keep it out of sight, the active model stays active (default false)")),
                     P("audit", Bool("open: audit the model while opening")),
                     P("overwrite", Bool("save_as: overwrite an existing file")),
                     P("save", Bool("close: save before closing")),
@@ -137,23 +142,8 @@ namespace T3LabRevit.Core
 
         static Document Find(UIApplication app, string titleOrPath)
         {
-            Document active = app.ActiveUIDocument?.Document;
-            if (string.IsNullOrWhiteSpace(titleOrPath))
-            {
-                if (active == null) throw new ToolError("No model is open.");
-                return active;
-            }
-            string want = titleOrPath.Trim();
-            foreach (Document d in app.Application.Documents)
-            {
-                if (d.IsLinked) continue;
-                if (string.Equals(d.Title, want, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(d.PathName, want, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(System.IO.Path.GetFileNameWithoutExtension(d.PathName ?? ""), want, StringComparison.OrdinalIgnoreCase))
-                    return d;
-            }
-            throw new ToolError($"No open model '{titleOrPath}'. Open models: " +
-                                string.Join(", ", app.Application.Documents.Cast<Document>().Where(d => !d.IsLinked).Select(d => d.Title)));
+            if (!string.IsNullOrWhiteSpace(titleOrPath)) return Documents.Find(app, titleOrPath);
+            return app.ActiveUIDocument?.Document ?? throw new ToolError("No model is open.");
         }
 
         static object Manage(ToolContext c, Args a)
@@ -168,7 +158,17 @@ namespace T3LabRevit.Core
                     if (!System.IO.File.Exists(path)) throw new ToolError($"File not found: {path}");
                     var opts = new OpenOptions { Audit = a.Bool("audit", false) };
                     if (a.Bool("detach", false)) opts.DetachFromCentralOption = DetachFromCentralOption.DetachAndPreserveWorksets;
-                    UIDocument ui = app.OpenAndActivateDocument(ModelPathUtils.ConvertUserVisiblePathToModelPath(path), opts, false);
+                    ModelPath model = ModelPathUtils.ConvertUserVisiblePathToModelPath(path);
+                    if (a.Bool("background", false))
+                    {
+                        Document bg = app.Application.OpenDocumentFile(model, opts);   // no window: the user's model stays active
+                        return new Dictionary<string, object>
+                        {
+                            ["opened"] = bg.Title, ["background"] = true, ["workshared"] = bg.IsWorkshared,
+                            ["note"] = $"Work in it with revit_document='{bg.Title}'; save or close it with manage_document title='{bg.Title}'.",
+                        };
+                    }
+                    UIDocument ui = app.OpenAndActivateDocument(model, opts, false);
                     return new Dictionary<string, object> { ["opened"] = ui.Document.Title, ["active_view"] = ui.ActiveView?.Name };
                 }
                 case "activate":
@@ -226,6 +226,8 @@ namespace T3LabRevit.Core
                         : app.Application.NewProjectDocument(template);
                     d.SaveAs(path, new SaveAsOptions { OverwriteExistingFile = a.Bool("overwrite", false) });
                     string saved = d.PathName;
+                    if (a.Bool("background", false))
+                        return new Dictionary<string, object> { ["created"] = saved, ["title"] = d.Title, ["background"] = true, ["template"] = template };
                     d.Close(false);   // opened without a window: close it, then open it in one
                     UIDocument ui = app.OpenAndActivateDocument(saved);
                     return new Dictionary<string, object> { ["created"] = saved, ["active"] = ui.Document.Title, ["template"] = template };

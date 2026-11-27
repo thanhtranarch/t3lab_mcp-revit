@@ -38,7 +38,9 @@ import System
             {
                 if (_engine != null) return _engine;
                 var e = Python.CreateEngine();
-                var paths = e.GetSearchPaths();
+                // no "." (Revit's current folder, which pyRevit or a dialog may have left anywhere): a json.py there would win
+                var paths = new List<string>();
+                foreach (string p in e.GetSearchPaths()) if (p != "." && p.Length > 0) paths.Add(p);
                 if (!string.IsNullOrEmpty(stdlib) && Directory.Exists(stdlib))
                 {
                     paths.Add(stdlib);

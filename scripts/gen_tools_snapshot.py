@@ -248,11 +248,15 @@ def tools():
             positional = [a for a in args if not isinstance(a, tuple)]
             named = dict(a for a in args if isinstance(a, tuple))
             name, title, kind, description, schema = positional[:5]
+            input_schema = json.loads(schema.replace("'", '"'))
+            # = Registry.TakesPin / WithPin: tools that work in any open model advertise the document pin
+            if named.get("needsDocument", True) is not False and named.get("scope", "ToolScope.Any") == "ToolScope.Any":
+                input_schema.setdefault("properties", {})[names["DocumentPin"]] = {"type": "string", "description": names["PinDescription"]}
             result.append({
                 "name": name,
                 "title": title,
                 "description": description,
-                "inputSchema": json.loads(schema.replace("'", '"')),
+                "inputSchema": input_schema,
                 "annotations": {
                     "title": title,
                     "readOnlyHint": kind == "ToolKind.Read" and not named.get("writesFiles", False),

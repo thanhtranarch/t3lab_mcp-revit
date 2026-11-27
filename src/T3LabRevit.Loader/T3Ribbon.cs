@@ -1,56 +1,68 @@
 using System;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using System.Collections.Generic;
 using Autodesk.Revit.UI;
 
 namespace T3LabRevit.Loader
 {
-    /// <summary>Tab "T3Lab MCP", panel "MCP Server". Icons are drawn in code (T3 Space Line: 2-unit outline on a 32 grid,
-    /// round caps, no fill, one orange detail), so the add-in ships no image files.</summary>
+    /// <summary>
+    /// Panel "T3Lab MCP" on Revit's own Add-Ins tab (owner's request, 2026-11-27: no tab of our own). Same buttons, order,
+    /// names, icons (T3Icons) and tooltips as T3Lab CAD MCP's panel on AutoCAD's Add-ins tab:
+    /// [Start / Stop] [Agent Cursors] [Connect AI] [Status | Reload].
+    /// </summary>
     internal static class T3Ribbon
     {
-        const string Tab = "T3Lab MCP";
-        const string Orange = "#EA680C";
+        internal const string PanelName = "T3Lab MCP";
+        const string Host = "Revit";
+
+        static readonly List<KeyValuePair<PushButton, string>> Buttons = new List<KeyValuePair<PushButton, string>>();
 
         internal static void Create(UIControlledApplication app)
         {
-            try { app.CreateRibbonTab(Tab); }
-            catch (Exception) { /* exists */ }
-            RibbonPanel panel = app.CreateRibbonPanel(Tab, "MCP Server");
+            foreach (RibbonPanel existing in app.GetRibbonPanels(Tab.AddIns))
+                if (existing.Name == PanelName) return;   // already built in this session
+            RibbonPanel panel = app.CreateRibbonPanel(Tab.AddIns, PanelName);
             string dll = typeof(T3Ribbon).Assembly.Location;
 
-            Add(panel, dll, "t3mcp_startstop", "Start /\nStop", typeof(StartStopCommand),
-                "Start or stop the MCP server that lets AI apps (Claude, ChatGPT/Codex, Cursor, Gemini...) work in this Revit.",
-                "M16 5 L16 15", "M10 8.5 A10 10 0 1 0 22 8.5");
-            Add(panel, dll, "t3mcp_cursors", "Agent\nCursors", typeof(AgentCursorsCommand),
-                "Show what each AI app does in Revit: its goal, the current step, the last calls and the elements it touched. Pause AI changes at any time.",
-                "M25 25 L19 19", "M7 5 L7 24 L12 19.5 L15.5 27 L19 25.5 L15.5 18 L22 18 Z");
-            Add(panel, dll, "t3mcp_connect", "Connect\nAI", typeof(ConnectCommand),
-                "Add this Revit to Claude Desktop, Claude Code, Codex, Cursor, VS Code, Gemini CLI, Windsurf and Antigravity in one click.",
-                "M14 18 L18 14", "M11 13 L8 16 A4.2 4.2 0 0 0 16 24 L19 21 M21 19 L24 16 A4.2 4.2 0 0 0 16 8 L13 11");
+            Add(panel, Button(dll, "t3mcp_startstop", "Start /\nStop", typeof(StartStopCommand), "power",
+                $"Start or stop the MCP server that lets AI apps (Claude, ChatGPT / Codex, Cursor, Gemini...) work in this {Host}. " +
+                $"Stopped, it stays stopped at the next {Host} start until you press Start again."));
+            Add(panel, Button(dll, "t3mcp_cursors", "Agent\nCursors", typeof(AgentCursorsCommand), "cursors",
+                $"Show what each AI app does in {Host}: its goal, the current step, the last calls and the elements it touched. " +
+                "Pause AI changes at any time. Press again to turn it off."));
+            Add(panel, Button(dll, "t3mcp_connect", "Connect\nAI", typeof(ConnectCommand), "connect",
+                $"Add this {Host} to Claude Desktop, Claude Code, Codex, Cursor, VS Code, Gemini CLI, Windsurf and Antigravity in one click, " +
+                "or check what is connected."));
 
-            var status = Button(dll, "t3mcp_status", "Status", typeof(StatusCommand), "Server status, port, calls and the log folder.",
-                "M16 15 L16 22", "M16 4 A12 12 0 1 0 16.01 4 M16 10 L16 10.2");
-            var reload = Button(dll, "t3mcp_reload", "Reload", typeof(ReloadCommand), "Load T3LabRevit.Core.dll again after an update, without restarting Revit.",
-                "M25 6 L25 12 L19 12", "M25 12 A10 10 0 1 0 26 18");
-            panel.AddStackedItems(status, reload);
+            PushButtonData status = Button(dll, "t3mcp_status", "Status", typeof(StatusCommand), "status",
+                "Server status: port, tools, calls, the call queue, Agent Cursors and the log folder.");
+            PushButtonData reload = Button(dll, "t3mcp_reload", "Reload", typeof(ReloadCommand), "reload",
+                $"Load T3LabRevit.Core.dll again after an update, without restarting {Host}.");
+            IList<RibbonItem> stacked = panel.AddStackedItems(status, reload);
+            if (stacked != null && stacked.Count == 2)
+            {
+                if (stacked[0] is PushButton s) Buttons.Add(new KeyValuePair<PushButton, string>(s, "status"));
+                if (stacked[1] is PushButton r) Buttons.Add(new KeyValuePair<PushButton, string>(r, "reload"));
+            }
+            WatchTheme(app);
         }
 
-        static void Add(RibbonPanel panel, string dll, string name, string text, Type cmd, string tip, string accent, string outline)
+        static void Add(RibbonPanel panel, PushButtonData data)
         {
-            var data = Button(dll, name, text, cmd, tip, accent, outline);
-            panel.AddItem(data);
+            if (panel.AddItem(data) is PushButton button) Buttons.Add(new KeyValuePair<PushButton, string>(button, IconOf[data.Name]));
         }
 
-        static PushButtonData Button(string dll, string name, string text, Type cmd, string tip, string accent, string outline)
+        static readonly Dictionary<string, string> IconOf = new Dictionary<string, string>();
+
+        static PushButtonData Button(string dll, string name, string text, Type cmd, string icon, string tip)
         {
+            IconOf[name] = icon;
+            bool dark = Dark();
             return new PushButtonData(name, text, dll, cmd.FullName)
             {
                 ToolTip = tip,
                 AvailabilityClassName = typeof(AlwaysAvailable).FullName,
-                LargeImage = Icon(32, outline, accent),
-                Image = Icon(16, outline, accent),
+                LargeImage = T3Icons.Get(icon, 32, dark),
+                Image = T3Icons.Get(icon, 16, dark),
             };
         }
 
@@ -60,37 +72,31 @@ namespace T3LabRevit.Loader
             try { return UIThemeManager.CurrentTheme == UITheme.Dark; }
             catch (Exception) { return false; }
 #else
-            return false;
+            return false;   // no dark theme before Revit 2024
 #endif
         }
 
-        static ImageSource Icon(int size, string outline, string accent)
+        /// <summary>Revit 2024+: repaint the icons when the user switches the light / dark theme (AutoCAD: COLORTHEME).</summary>
+        static void WatchTheme(UIControlledApplication app)
         {
-            try
-            {
-                var line = (Color)ColorConverter.ConvertFromString(Dark() ? "#EDEDED" : "#000000");
-                var orange = (Color)ColorConverter.ConvertFromString(Orange);
-                var visual = new DrawingVisual();
-                using (DrawingContext dc = visual.RenderOpen())
-                {
-                    dc.PushTransform(new ScaleTransform(size / 32.0, size / 32.0));
-                    dc.DrawGeometry(null, PenOf(line), Geometry.Parse(outline));
-                    dc.DrawGeometry(null, PenOf(orange), Geometry.Parse(accent));
-                    dc.Pop();
-                }
-                var bmp = new RenderTargetBitmap(size, size, 96, 96, PixelFormats.Pbgra32);
-                bmp.Render(visual);
-                bmp.Freeze();
-                return bmp;
-            }
-            catch (Exception) { return null; }
+#if REVIT2024_OR_GREATER
+            try { app.ThemeChanged += (s, e) => Repaint(); }
+            catch (Exception) { /* the icons keep the theme of the start */ }
+#endif
         }
 
-        static Pen PenOf(Color c)
+        static void Repaint()
         {
-            var pen = new Pen(new SolidColorBrush(c), 2.0) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
-            pen.Freeze();
-            return pen;
+            bool dark = Dark();
+            foreach (KeyValuePair<PushButton, string> b in Buttons)
+            {
+                try
+                {
+                    b.Key.LargeImage = T3Icons.Get(b.Value, 32, dark);
+                    b.Key.Image = T3Icons.Get(b.Value, 16, dark);
+                }
+                catch (Exception) { /* keep the old icon */ }
+            }
         }
     }
 }

@@ -7,7 +7,7 @@ using Autodesk.Revit.UI;
 
 namespace T3LabRevit.Loader
 {
-    /// <summary>Entry point Revit calls through T3LabRevit.addin: starts the MCP server and adds the T3Lab MCP ribbon tab.</summary>
+    /// <summary>Entry point Revit calls through T3LabRevit.addin: starts the MCP server and adds the T3Lab MCP panel to the Add-Ins tab.</summary>
     public sealed class LoaderApp : IExternalApplication
     {
         public Result OnStartup(UIControlledApplication application)
@@ -19,7 +19,7 @@ namespace T3LabRevit.Loader
                 catch (Exception ex) { Settings.StartError = CoreHost.Unwrap(ex).Message; }
             }
             try { T3Ribbon.Create(application); }
-            catch (Exception) { /* the server still runs; the tab is a convenience */ }
+            catch (Exception) { /* the server still runs; the panel is a convenience */ }
             return Result.Succeeded;
         }
 
@@ -31,10 +31,10 @@ namespace T3LabRevit.Loader
         }
     }
 
-    /// <summary>%APPDATA%\T3LabRevitMCP\autostart.off turns the start with Revit off.</summary>
+    /// <summary>%APPDATA%\T3LabRevit\autostart.off turns the start with Revit off.</summary>
     internal static class Settings
     {
-        internal static string DataDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "T3LabRevitMCP");
+        internal static string DataDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "T3LabRevit");   // before 1.1.0: T3LabRevitMCP (install.ps1 moves it)
         static string OffFlag => Path.Combine(DataDir, "autostart.off");
         internal static string StartError;
 
@@ -139,7 +139,7 @@ namespace T3LabRevit.Loader
         }
     }
 
-    /// <summary>Runs the installer's client step (%APPDATA%\T3LabRevitMCP\install.ps1 -ConnectOnly) in a console the user can read.</summary>
+    /// <summary>Runs the installer's client step (%APPDATA%\T3LabRevit\install.ps1 -ConnectOnly) in a console the user can read.</summary>
     [Transaction(TransactionMode.Manual)]
     public sealed class ConnectCommand : IExternalCommand
     {
