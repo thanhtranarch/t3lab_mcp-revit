@@ -31,6 +31,7 @@ namespace T3LabRevit.Core
             public double L, T, R, B;
             public string Label;
             public bool Deleted;
+            public Color Color = ToMedia(T3Style.Action("Read"));   // created, changed, deleted or read (T3Style)
         }
 
         /// <summary>A curve the cursor draws along (screen px, physical), start to end.</summary>
@@ -115,6 +116,13 @@ namespace T3LabRevit.Core
 
         public static void ClearModel() => Post(() => _overlay?.Clear());
 
+        /// <summary>Bar button Replay: frames shown one after the other.</summary>
+        public static void Replay(List<Frame> frames) => Post(() =>
+        {
+            if (_overlay == null) _overlay = new Overlay();
+            _overlay.Replay(frames);
+        });
+
         public static void Toast(string text) => Post(() => _hud?.Toast(text));
 
         public static void HideAll() => Post(() =>
@@ -149,25 +157,17 @@ namespace T3LabRevit.Core
 
         // ---------------------------------------------------------------- shared
 
-        public static Color ActionColor(ActionKind kind)
-        {
-            switch (kind)
-            {
-                case ActionKind.Create: return AgentCursors.Rgb(0x14, 0xAE, 0x5C);
-                case ActionKind.Modify: return AgentCursors.Rgb(0xFF, 0x8A, 0x00);
-                case ActionKind.Delete: return AgentCursors.Rgb(0xE5, 0x48, 0x4D);
-                case ActionKind.File: return AgentCursors.Rgb(0x8E, 0x6C, 0xEF);
-                case ActionKind.View: return AgentCursors.Rgb(0x00, 0xA3, 0xBF);
-                default: return AgentCursors.Rgb(0x0D, 0x99, 0xFF);
-            }
-        }
+        /// <summary>The action's colour (T3Style, the same in T3Lab CAD MCP).</summary>
+        public static Color ActionColor(ActionKind kind) => ToMedia(T3Style.Action(kind.ToString()));
 
-        /// <summary>Tag ink on a pastel wash: 10:1 or better on every palette colour (white on the solid colour was ~3:1).</summary>
-        internal static readonly Color Ink = AgentCursors.Rgb(0x1F, 0x29, 0x37);
+        internal static Color ToMedia(uint argb) => AgentCursors.C(argb);
 
-        /// <summary>The colour mixed into white: amount 0 = white, 1 = the colour.</summary>
-        internal static Color Pastel(Color c, double amount = 0.2) => Color.FromRgb(
-            (byte)Math.Round(255 + (c.R - 255) * amount), (byte)Math.Round(255 + (c.G - 255) * amount), (byte)Math.Round(255 + (c.B - 255) * amount));
+        /// <summary>Tag ink on the pastel wash (T3Style.TagInk).</summary>
+        internal static readonly Color Ink = AgentCursors.C(T3Style.TagInk);
+
+        /// <summary>The colour mixed into white (T3Style.Wash): amount 0 = white, 1 = the colour.</summary>
+        internal static Color Pastel(Color c, double amount = 0.2) =>
+            AgentCursors.C(T3Style.Wash(0xFF000000u | ((uint)c.R << 16) | ((uint)c.G << 8) | c.B, amount));
 
         internal static SolidColorBrush B(Color c, byte alpha = 255)
         {
@@ -232,85 +232,95 @@ namespace T3LabRevit.Core
 
         // ---------------------------------------------------------------- the bar
 
+        /// <summary>
+        /// The bar, laid out like T3Lab CAD MCP's palette (same order, words and T3Style colours; Revit's theme picks light or
+        /// dark): per agent its pointer, name, status, counts, goal, plan with progress and the band of what runs now; RECENT;
+        /// then Show on model / Follow and Pause / Select changes / Replay / Clear.
+        /// </summary>
         sealed class Hud
         {
+            const string Host = "Revit", Place = "model";
             readonly Window _win;
+            readonly Border _frame;
             readonly StackPanel _agents = new StackPanel(), _feed = new StackPanel();
-            readonly Button _pause, _select, _clear;
+            readonly TextBlock _title, _recent, _toast, _paused;
+            readonly Border _line1, _line2;
+            readonly Button _close, _pause, _select, _replay, _clear;
             readonly CheckBox _onModel, _follow;
-            readonly TextBlock _toast;
             readonly DispatcherTimer _tick;
             AgentCursors.View _view = new AgentCursors.View();
+            T3Style.Palette _p = T3Style.Light;
             bool _updating, _placed, _hiddenForFocus;
+            int _idleTicks;
             DateTime _toastUntil;
             public bool UserClosed;
-
-            static readonly Brush Fore = Hex(0xFF1F1F1F), Muted = Hex(0xFF6B6B6B), Line = Hex(0x22000000), Back = Hex(0xF7FFFFFF), Orange = Hex(0xFFEA680C);
 
             public Hud()
             {
                 _win = new Window
                 {
-                    Title = "T3Lab Agent Cursors", Width = 312, SizeToContent = SizeToContent.Height,
+                    Title = T3Style.Title, Width = 320, SizeToContent = SizeToContent.Height,
                     WindowStyle = WindowStyle.None, AllowsTransparency = true, Background = Brushes.Transparent,
                     ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, Topmost = true, ShowActivated = false,
-                    FontFamily = new FontFamily("Segoe UI"), FontSize = 12, Foreground = Fore,
+                    FontFamily = new FontFamily("Segoe UI"), FontSize = 12,
                 };
                 _win.SourceInitialized += (s, e) => Native.AddExStyle(_win, Native.WS_EX_TOOLWINDOW | Native.WS_EX_NOACTIVATE);
                 _win.Closed += (s, e) => _tick?.Stop();
 
                 var root = new StackPanel();
-                // header
+                // header: drag to move; ✕ hides the bar
                 var header = new DockPanel { Margin = new Thickness(12, 10, 8, 6), Background = Brushes.Transparent, Cursor = Cursors.SizeAll };
                 header.MouseLeftButtonDown += (s, e) => { try { _win.DragMove(); } catch (Exception) { } };
-                var close = SmallButton("✕", "Hide the bar (Agent Cursors stays on; the ribbon button shows it again)");
-                close.Click += (s, e) => { UserClosed = true; _win.Hide(); SetHudVisible(false); };
-                DockPanel.SetDock(close, Dock.Right);
-                _pause = SmallButton("Pause", "Pause AI changes: tools that change the model are refused until you press Resume");
-                _pause.Click += (s, e) => AgentCursors.SetPaused(!_view.Paused);
-                DockPanel.SetDock(_pause, Dock.Right);
-                header.Children.Add(close);
-                header.Children.Add(_pause);
+                _close = FlatButton("✕", T3Style.CloseTip);
+                _close.Click += (s, e) => { UserClosed = true; _win.Hide(); SetHudVisible(false); };
+                DockPanel.SetDock(_close, Dock.Right);
+                header.Children.Add(_close);
                 var title = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-                title.Children.Add(new Ellipse { Width = 8, Height = 8, Fill = Orange, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
-                title.Children.Add(new TextBlock { Text = "T3Lab Agent Cursors", FontWeight = FontWeights.SemiBold });
+                title.Children.Add(new Ellipse { Width = 8, Height = 8, Fill = B(AgentCursors.C(T3Style.Light.Accent)), Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
+                _title = new TextBlock { Text = T3Style.Title, FontWeight = FontWeights.SemiBold };
+                title.Children.Add(_title);
                 header.Children.Add(title);
                 root.Children.Add(header);
 
-                _agents.Margin = new Thickness(12, 0, 12, 4);
+                _agents.Margin = new Thickness(12, 0, 12, 0);
                 root.Children.Add(_agents);
-                root.Children.Add(new Border { Height = 1, Background = Line, Margin = new Thickness(12, 4, 12, 6) });
-                root.Children.Add(new TextBlock { Text = "RECENT", FontSize = 10, Foreground = Muted, Margin = new Thickness(12, 0, 12, 2) });
+                _paused = new TextBlock { Text = T3Style.PausedNote, TextWrapping = TextWrapping.Wrap, FontSize = 11, Margin = new Thickness(12, 0, 12, 6), Visibility = Visibility.Collapsed };
+                root.Children.Add(_paused);
+                _line1 = new Border { Height = 1, Margin = new Thickness(12, 2, 12, 6) };
+                root.Children.Add(_line1);
+                _recent = new TextBlock { Text = T3Style.Recent, FontSize = 10, Margin = new Thickness(12, 0, 12, 2) };
+                root.Children.Add(_recent);
                 _feed.Margin = new Thickness(12, 0, 12, 6);
                 root.Children.Add(_feed);
-                root.Children.Add(new Border { Height = 1, Background = Line, Margin = new Thickness(12, 2, 12, 6) });
+                _line2 = new Border { Height = 1, Margin = new Thickness(12, 2, 12, 6) };
+                root.Children.Add(_line2);
 
                 var opts = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(12, 0, 12, 6) };
-                _onModel = new CheckBox { Content = "Show on the model", Margin = new Thickness(0, 0, 12, 0), ToolTip = "Move a cursor per AI over the Revit views and frame what it touches" };
+                _onModel = new CheckBox { Content = T3Style.ShowOn(Place), Margin = new Thickness(0, 0, 12, 0), ToolTip = T3Style.ShowOnTip(Place) };
                 _onModel.Click += (s, e) => { if (!_updating) AgentCursors.SetOption("show_on_model", _onModel.IsChecked == true); };
-                _follow = new CheckBox { Content = "Follow", ToolTip = "Zoom Revit to what the AI changes" };
+                _follow = new CheckBox { Content = T3Style.Follow, ToolTip = T3Style.FollowTip(Host) };
                 _follow.Click += (s, e) => { if (!_updating) AgentCursors.SetOption("follow", _follow.IsChecked == true); };
                 opts.Children.Add(_onModel);
                 opts.Children.Add(_follow);
                 root.Children.Add(opts);
 
-                var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(12, 0, 12, 8) };
-                _select = SmallButton("Select changes", "Select in Revit every element the AI created or changed in this model, and zoom to them");
+                var buttons = new WrapPanel { Margin = new Thickness(8, 0, 12, 8) };
+                _pause = FlatButton(T3Style.Pause, T3Style.PauseTip);
+                _pause.Click += (s, e) => AgentCursors.SetPaused(!_view.Paused);
+                _select = FlatButton(T3Style.Select, T3Style.SelectTip("element"));
                 _select.Click += (s, e) => AgentCursors.SelectTouched(true);
-                _clear = SmallButton("Clear", "Forget the list, the goals and the changed elements");
+                _replay = FlatButton(T3Style.Replay, T3Style.ReplayTip);
+                _replay.Click += (s, e) => AgentCursors.Replay();
+                _clear = FlatButton(T3Style.Clear, T3Style.ClearTip);
                 _clear.Click += (s, e) => AgentCursors.ClearFeed();
-                buttons.Children.Add(_select);
-                buttons.Children.Add(_clear);
+                foreach (Button b in new[] { _pause, _select, _replay, _clear }) buttons.Children.Add(b);
                 root.Children.Add(buttons);
 
-                _toast = new TextBlock { Foreground = Muted, FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 0, 12, 8), Visibility = Visibility.Collapsed };
+                _toast = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 0, 12, 8), Visibility = Visibility.Collapsed };
                 root.Children.Add(_toast);
 
-                _win.Content = new Border
-                {
-                    Background = Back, BorderBrush = Hex(0x33000000), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8),
-                    Child = root,
-                };
+                _frame = new Border { BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Child = root };
+                _win.Content = _frame;
 
                 _tick = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
                 _tick.Tick += (s, e) =>
@@ -321,11 +331,27 @@ namespace T3LabRevit.Core
                 _tick.Start();
             }
 
-            static Button SmallButton(string text, string tip) => new Button
+            SolidColorBrush P(uint argb, byte alpha = 255) => B(AgentCursors.C(argb), alpha);
+
+            /// <summary>A flat button that follows the bar's palette (WPF's own chrome stays light in a dark bar).</summary>
+            static Button FlatButton(string text, string tip)
             {
-                Content = text, ToolTip = tip, Padding = new Thickness(8, 2, 8, 2), Margin = new Thickness(4, 0, 0, 0),
-                Background = Hex(0xFFF0F0F0), BorderBrush = Hex(0x33000000), Focusable = false,
-            };
+                var border = new FrameworkElementFactory(typeof(Border));
+                border.SetBinding(Border.BackgroundProperty, new System.Windows.Data.Binding("Background") { RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent });
+                border.SetBinding(Border.BorderBrushProperty, new System.Windows.Data.Binding("BorderBrush") { RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent });
+                border.SetBinding(Border.PaddingProperty, new System.Windows.Data.Binding("Padding") { RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent });
+                border.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+                border.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
+                var content = new FrameworkElementFactory(typeof(ContentPresenter));
+                content.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+                content.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+                border.AppendChild(content);
+                return new Button
+                {
+                    Content = text, ToolTip = tip, Padding = new Thickness(8, 2, 8, 3), Margin = new Thickness(4, 0, 0, 4),
+                    Focusable = false, Cursor = Cursors.Hand, Template = new ControlTemplate(typeof(Button)) { VisualTree = border },
+                };
+            }
 
             public void Reveal()
             {
@@ -371,10 +397,8 @@ namespace T3LabRevit.Core
                     catch (Exception ex) { Log.Error("agent cursors snapshot: " + ex.Message); }
                     Render();
                 }
-                else if (++_idleTicks % 10 == 0 && _view.Agents.Any(a => a.LastEnd.HasValue)) Render();   // "last step 3 min ago"
+                else if (++_idleTicks % 10 == 0 && (_view.Feed.Count > 0 || _view.Agents.Any(a => a.LastEnd.HasValue))) Render();   // "3 min ago"
             }
-
-            int _idleTicks;
 
             public void SetView(AgentCursors.View view)
             {
@@ -382,118 +406,181 @@ namespace T3LabRevit.Core
                 Render();
             }
 
+            void Theme()
+            {
+                _p = T3Style.For(_view.Dark);
+                _frame.Background = P(_p.Bg, 0xF7);
+                _frame.BorderBrush = P(_p.Line);
+                _win.Foreground = P(_p.Text);
+                _title.Foreground = P(_p.Text);
+                _recent.Foreground = P(_p.Muted);
+                _toast.Foreground = P(_p.Muted);
+                _paused.Foreground = P(_p.Warn);
+                _line1.Background = _line2.Background = P(_p.Line);
+                _onModel.Foreground = _follow.Foreground = P(_p.Text);
+                foreach (Button b in new[] { _close, _pause, _select, _replay, _clear })
+                {
+                    b.Background = P(_p.Card);
+                    b.BorderBrush = P(_p.Line);
+                    b.Foreground = P(_p.Text);
+                    b.Opacity = b.IsEnabled ? 1 : 0.45;
+                }
+                _close.Background = Brushes.Transparent;
+                _close.BorderBrush = Brushes.Transparent;
+                if (_view.Paused) { _pause.Background = P(_p.Warn, 0x33); _pause.BorderBrush = P(_p.Warn); }
+            }
+
             void Render()
             {
                 _updating = true;
                 try
                 {
-                    _pause.Content = _view.Paused ? "Resume" : "Pause";
-                    _pause.Background = _view.Paused ? Hex(0xFFFFE2C4) : Hex(0xFFF0F0F0);
+                    _pause.Content = _view.Paused ? T3Style.Resume : T3Style.Pause;
                     _onModel.IsChecked = _view.ShowOnModel;
                     _follow.IsChecked = _view.Follow;
-                    _select.Content = _view.Touched > 0 ? $"Select changes ({_view.Touched})" : "Select changes";
+                    _follow.IsEnabled = _view.ShowOnModel;
+                    _select.Content = T3Style.SelectLabel(_view.Touched);
                     _select.IsEnabled = _view.Touched > 0;
+                    _paused.Visibility = _view.Paused ? Visibility.Visible : Visibility.Collapsed;
+                    Theme();
 
                     _agents.Children.Clear();
                     if (_view.Agents.Count == 0)
-                        _agents.Children.Add(new TextBlock { Text = "No AI app has worked in Revit yet. Ask Claude (or another MCP app) to do something in the model.", TextWrapping = TextWrapping.Wrap, Foreground = Muted });
-                    foreach (AgentCursors.AgentView a in _view.Agents.Take(4)) _agents.Children.Add(AgentBlock(a));
+                    {
+                        _agents.Children.Add(new TextBlock { Text = T3Style.Empty, FontWeight = FontWeights.SemiBold, Foreground = P(_p.Text) });
+                        _agents.Children.Add(new TextBlock { Text = T3Style.EmptyHint(Host), TextWrapping = TextWrapping.Wrap, Foreground = P(_p.Muted), Margin = new Thickness(0, 2, 0, 6) });
+                    }
+                    foreach (AgentCursors.AgentView a in _view.Agents.Take(T3Style.AgentRows)) _agents.Children.Add(AgentBlock(a));
 
                     _feed.Children.Clear();
-                    if (_view.Feed.Count == 0) _feed.Children.Add(new TextBlock { Text = "Nothing yet.", Foreground = Muted });
-                    foreach (AgentCursors.StepView s in _view.Feed.Take(6)) _feed.Children.Add(StepRow(s));
+                    if (_view.Feed.Count == 0) _feed.Children.Add(new TextBlock { Text = "Nothing yet.", Foreground = P(_p.Muted) });
+                    foreach (AgentCursors.StepView s in _view.Feed.Take(T3Style.FeedRows)) _feed.Children.Add(StepRow(s));
                 }
                 finally { _updating = false; }
             }
 
+            /// <summary>The agent's avatar on the bar: the cursor it moves over the model.</summary>
+            static UIElement Pointer(Color c) => new Path
+            {
+                Data = Geometry.Parse("M0,0 L0,13 L3.6,9.6 L6.2,14.5 L8.2,13.6 L5.8,8.8 L10.5,8.8 Z"),
+                Fill = B(c), Stroke = Brushes.White, StrokeThickness = 1, Margin = new Thickness(0, 1, 6, 0), VerticalAlignment = VerticalAlignment.Center,
+            };
+
             UIElement AgentBlock(AgentCursors.AgentView a)
             {
-                var panel = new StackPanel { Margin = new Thickness(0, 2, 0, 6) };
-                var row = new DockPanel();
+                var panel = new StackPanel { Margin = new Thickness(0, 2, 0, 8) };
                 int secs = Math.Max(0, (int)(DateTime.Now - a.NowStarted).TotalSeconds);
                 string statusText;
+                uint statusColor;
                 switch (a.State)
                 {
-                    case AgentCursors.AgentState.Working: statusText = $"Working {secs} s"; break;
-                    case AgentCursors.AgentState.Blocked: statusText = $"Waiting for Revit {secs} s"; break;
-                    case AgentCursors.AgentState.Thinking: statusText = "Thinking" + Dots(); break;
-                    case AgentCursors.AgentState.Idle:
-                        statusText = a.LastEnd.HasValue ? "Idle · last step " + AgentCursors.Ago(a.LastEnd.Value) : "Idle"; break;
-                    default: statusText = a.Status; break;
+                    case AgentCursors.AgentState.Working: statusText = $"Working {secs} s"; statusColor = T3Style.Action(a.NowAction.ToString()); break;
+                    case AgentCursors.AgentState.Blocked: statusText = $"Waiting for {Host} {secs} s"; statusColor = _p.Warn; break;
+                    case AgentCursors.AgentState.Queued:
+                    case AgentCursors.AgentState.Paused: statusText = a.Status; statusColor = _p.Warn; break;
+                    case AgentCursors.AgentState.Thinking: statusText = "Thinking" + T3Style.Dots(); statusColor = _p.Info; break;
+                    default:
+                        statusText = a.LastEnd.HasValue ? "Idle · last step " + T3Style.Ago(a.LastEnd.Value) : "Idle"; statusColor = _p.Muted; break;
                 }
-                bool amber = a.State == AgentCursors.AgentState.Paused || a.State == AgentCursors.AgentState.Queued || a.State == AgentCursors.AgentState.Blocked;
-                var status = new TextBlock { Text = statusText, Foreground = amber ? Orange : Muted, FontSize = 11 };
+                var row = new DockPanel();
+                var status = new TextBlock { Text = statusText, Foreground = P(statusColor), FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
                 DockPanel.SetDock(status, Dock.Right);
                 row.Children.Add(status);
                 var name = new StackPanel { Orientation = Orientation.Horizontal };
-                name.Children.Add(new Ellipse { Width = 10, Height = 10, Fill = B(a.Color), Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
-                name.Children.Add(new TextBlock { Text = a.Name, FontWeight = FontWeights.SemiBold });
-                name.Children.Add(new TextBlock { Text = $"  {a.Calls} calls · {a.Changes} changes", Foreground = Muted, FontSize = 11, VerticalAlignment = VerticalAlignment.Center });
+                name.Children.Add(Pointer(a.Color));
+                name.Children.Add(new TextBlock { Text = a.Name, FontWeight = FontWeights.SemiBold, Foreground = P(_p.Text) });
                 row.Children.Add(name);
                 panel.Children.Add(row);
+                panel.Children.Add(new TextBlock { Text = T3Style.Counts(a.Calls, a.Changes), Foreground = P(_p.Muted), FontSize = 11, Margin = new Thickness(16, 0, 0, 0) });
                 if (!string.IsNullOrEmpty(a.Goal))
-                    panel.Children.Add(new TextBlock { Text = a.Goal, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(16, 2, 0, 0) });
-                for (int i = 0; i < a.Tasks.Count; i++)
+                    panel.Children.Add(new TextBlock { Text = a.Goal, TextWrapping = TextWrapping.Wrap, Foreground = P(_p.Text), Margin = new Thickness(16, 2, 0, 0) });
+                if (a.Tasks.Count > 0)
                 {
-                    bool done = a.PlanDone || i + 1 < a.Step, now = !a.PlanDone && i + 1 == a.Step;
-                    panel.Children.Add(new TextBlock
+                    int done = a.PlanDone ? a.Tasks.Count : Math.Max(0, a.Step - 1);
+                    var progress = new DockPanel { Margin = new Thickness(16, 4, 0, 2) };
+                    var label = new TextBlock { Text = T3Style.StepOf(a.Step, a.Tasks.Count, a.PlanDone), Foreground = P(_p.Muted), FontSize = 11, Width = 64 };
+                    progress.Children.Add(label);
+                    var track = new Grid { Height = 5, VerticalAlignment = VerticalAlignment.Center };
+                    track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0.001, done), GridUnitType.Star) });
+                    track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0.001, a.Tasks.Count - done), GridUnitType.Star) });
+                    var fill = new Border { Background = B(a.Color), CornerRadius = new CornerRadius(2) };
+                    var rest = new Border { Background = P(_p.Track), CornerRadius = new CornerRadius(2) };
+                    Grid.SetColumn(rest, 1);
+                    track.Children.Add(fill);
+                    track.Children.Add(rest);
+                    progress.Children.Add(track);
+                    panel.Children.Add(progress);
+                    for (int i = 0; i < a.Tasks.Count; i++)
                     {
-                        Text = (done ? "✓  " : now ? "▸  " : "○  ") + a.Tasks[i],
-                        Foreground = done ? Muted : Fore, FontWeight = now ? FontWeights.SemiBold : FontWeights.Normal,
-                        Margin = new Thickness(16, 1, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis,
-                    });
+                        bool isDone = a.PlanDone || i + 1 < a.Step, now = !a.PlanDone && i + 1 == a.Step;
+                        var task = new TextBlock { Margin = new Thickness(16, 1, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis };
+                        task.Inlines.Add(new System.Windows.Documents.Run(T3Style.TaskMark(isDone, now) + "  ")
+                        {
+                            Foreground = isDone ? P(_p.Ok) : now ? B(a.Color) : P(_p.Muted),
+                        });
+                        task.Inlines.Add(new System.Windows.Documents.Run($"{i + 1}  {a.Tasks[i]}")
+                        {
+                            Foreground = now ? P(_p.Text) : P(_p.Muted), FontWeight = now ? FontWeights.SemiBold : FontWeights.Normal,
+                        });
+                        panel.Children.Add(task);
+                    }
                 }
                 if (a.Working && !string.IsNullOrEmpty(a.Now))
                 {
                     // the band: the action's colour while it runs; amber while it waits its turn or for Revit
                     bool waits = a.State == AgentCursors.AgentState.Queued || a.State == AgentCursors.AgentState.Blocked;
-                    Color c = waits ? AgentCursors.Rgb(0xE0, 0x8E, 0x00) : ActionColor(a.NowAction);
-                    var text = new TextBlock { TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap };
-                    text.Inlines.Add(new System.Windows.Documents.Run(a.Now));
-                    string why = a.State == AgentCursors.AgentState.Queued
-                        ? (a.Behind != null ? "after " + a.Behind : "waiting its turn") + (a.Ahead > 0 ? $", {a.Ahead} more ahead" : "")
-                        : a.State == AgentCursors.AgentState.Blocked ? "Revit is busy: a dialog, an edit mode or a long operation" : null;
+                    uint c = waits ? _p.Warn : T3Style.Action(a.NowAction.ToString());
+                    string head = a.State == AgentCursors.AgentState.Queued
+                        ? "IN LINE · " + (a.Behind != null ? "after " + a.Behind : "waiting its turn") + (a.Ahead > 0 ? $", {a.Ahead} more ahead" : "")
+                        : a.State == AgentCursors.AgentState.Blocked ? $"WAITING · {Host} is busy (a dialog, an edit mode or a long operation)"
+                        : a.NowAction.ToString().ToUpperInvariant();
                     var band = new StackPanel();
-                    band.Children.Add(text);
-                    if (why != null) band.Children.Add(new TextBlock { Text = why, Foreground = Muted, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis });
+                    band.Children.Add(new TextBlock { Text = head, Foreground = P(c), FontSize = 10, TextTrimming = TextTrimming.CharacterEllipsis });
+                    band.Children.Add(new TextBlock { Text = a.Now, Foreground = P(_p.Text), FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
                     panel.Children.Add(new Border
                     {
-                        Background = B(c, 0x26), BorderBrush = B(c), BorderThickness = new Thickness(3, 0, 0, 0),
-                        Padding = new Thickness(6, 3, 6, 3), Margin = new Thickness(16, 4, 0, 0), Child = band,
+                        Background = P(c, 0x28), BorderBrush = P(c), BorderThickness = new Thickness(4, 0, 0, 0),
+                        Padding = new Thickness(8, 3, 6, 4), Margin = new Thickness(0, 6, 0, 0), Child = band,
                     });
                 }
                 else if (a.State == AgentCursors.AgentState.Thinking)
                 {
                     panel.Children.Add(new TextBlock
                     {
-                        Text = "Waiting for the model" + Dots(), Foreground = Muted, FontSize = 11, FontStyle = FontStyles.Italic,
-                        Margin = new Thickness(16, 2, 0, 0),
+                        Text = T3Style.Thinking + " " + T3Style.Dots(), Foreground = P(_p.Muted), FontSize = 11, FontStyle = FontStyles.Italic,
+                        Margin = new Thickness(16, 4, 0, 0),
                     });
                 }
+                panel.Children.Add(new Border { Height = 1, Background = P(_p.Line), Margin = new Thickness(0, 8, 0, 0) });
                 return panel;
             }
 
-            static string Dots() => new string('·', 1 + (int)(DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond / 500 % 3));
-
             UIElement StepRow(AgentCursors.StepView s)
             {
-                var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1), ToolTip = s.Error ?? s.Caption };
-                string state = s.State == StepState.Ok ? "ok" : s.State == StepState.Refused ? "paused" : s.State == StepState.Busy ? "not run"
-                    : s.State == StepState.Failed ? "failed" : "…";
-                var right = new TextBlock
-                {
-                    Text = (s.Changed > 0 ? s.Changed + " · " : "") + state,
-                    Foreground = s.State == StepState.Failed ? Hex(0xFFE5484D) : s.State == StepState.Refused || s.State == StepState.Busy ? Orange : Muted,
-                    FontSize = 11,
-                };
+                string state = s.State.ToString();
+                var block = new DockPanel { Margin = new Thickness(0, 1, 0, 3), ToolTip = s.Error ?? s.Caption };
+                var stripe = new Border { Width = 3, Background = P(T3Style.Action(s.Action.ToString())), Margin = new Thickness(0, 1, 6, 1) };
+                DockPanel.SetDock(stripe, Dock.Left);
+                block.Children.Add(stripe);
+                var lines = new StackPanel();
+                var top = new DockPanel();
+                var right = new TextBlock { Text = s.Agent + " · " + T3Style.Ago(s.When), Foreground = P(_p.Muted), FontSize = 11, Margin = new Thickness(6, 0, 0, 0) };
                 DockPanel.SetDock(right, Dock.Right);
-                row.Children.Add(right);
-                row.Children.Add(new Border { Width = 3, Background = B(ActionColor(s.Action)), Margin = new Thickness(0, 1, 6, 1) });
-                var text = new TextBlock { TextTrimming = TextTrimming.CharacterEllipsis };
-                text.Inlines.Add(new System.Windows.Documents.Run(s.Agent + "  ") { Foreground = B(s.Color), FontWeight = FontWeights.SemiBold });
-                text.Inlines.Add(new System.Windows.Documents.Run(s.Caption));
-                row.Children.Add(text);
-                return row;
+                top.Children.Add(right);
+                var caption = new TextBlock { TextTrimming = TextTrimming.CharacterEllipsis };
+                caption.Inlines.Add(new System.Windows.Documents.Run(T3Style.Mark(state) + "  ") { Foreground = P(T3Style.MarkColor(state, _p)) });
+                caption.Inlines.Add(new System.Windows.Documents.Run(s.Caption) { Foreground = P(_p.Text) });
+                top.Children.Add(caption);
+                lines.Children.Add(top);
+                string detail = T3Style.Detail(state, s.Changed, s.Seconds, s.Error);
+                if (detail.Length > 0)
+                    lines.Children.Add(new TextBlock
+                    {
+                        Text = detail, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(14, 0, 0, 0),
+                        Foreground = P(s.State == StepState.Ok ? _p.Muted : T3Style.MarkColor(state, _p)),
+                    });
+                block.Children.Add(lines);
+                return block;
             }
         }
 
@@ -501,7 +588,7 @@ namespace T3LabRevit.Core
 
         sealed class Overlay
         {
-            const double MoveMs = 650, HopMs = 380, BoxHoldS = 3.5, ThinkAfterS = 2.5, IdleHideS = AgentCursors.ThinkS + 10;
+            const double MoveMs = 650, HopMs = 380, BoxHoldS = 3.5, ThinkAfterS = 2.5, IdleHideS = AgentCursors.ThinkS + 10, ReplayMs = 900;
             const double DrawSpeed = 0.9;   // DIP per ms while drawing along a new element
             readonly Window _win;
             readonly Canvas _canvas = new Canvas();
@@ -559,14 +646,13 @@ namespace T3LabRevit.Core
             {
                 Place();
                 if (!_win.IsVisible && Native.RevitInFront()) _win.Show();
-                Color ac = f.Failed ? AgentCursors.Rgb(0xE5, 0x48, 0x4D) : ActionColor(f.Action);
                 Pointer p = PointerFor(f.Agent, f.Color, f.Path.Count > 0 || f.Boxes.Count > 0 || f.Views.Count > 0);
                 if (p == null) return;
                 SetText(p, PointerMode.Done, f.Subject ?? f.Caption);
 
                 double hold = BoxHoldS;
                 if (f.Path.Count > 0) hold += DrawAlong(p, f.Path, f.Color) / 1000.0;
-                foreach (Box b in f.Boxes) AddBox(b, ac, f.Change || b.Deleted, hold);
+                foreach (Box b in f.Boxes) AddBox(b, b.Color, f.Change || b.Deleted, hold);
                 if (f.Path.Count > 0) return;
 
                 // the cursor goes to the first thing it touched, else into the view; agents on one spot sit side by side
@@ -748,15 +834,42 @@ namespace T3LabRevit.Core
                 }
             }
 
+            readonly Queue<Frame> _replay = new Queue<Frame>();
+            DispatcherTimer _replayTick;
+
+            /// <summary>Up to the last 20 frames, one every ReplayMs (as AutoCAD's Replay).</summary>
+            public void Replay(List<Frame> frames)
+            {
+                Clear();
+                foreach (Frame f in frames.Skip(Math.Max(0, frames.Count - 20))) _replay.Enqueue(f);
+                if (_replayTick == null)
+                {
+                    _replayTick = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ReplayMs) };
+                    _replayTick.Tick += (s, e) =>
+                    {
+                        try
+                        {
+                            if (_replay.Count == 0) _replayTick.Stop();
+                            else Show(_replay.Dequeue());
+                        }
+                        catch (Exception ex) { Log.Error("agent cursors replay: " + ex.Message); _replayTick.Stop(); }
+                    };
+                }
+                if (_replay.Count > 0) Show(_replay.Dequeue());
+                _replayTick.Start();
+            }
+
             public void Clear()
             {
+                _replay.Clear();
+                _replayTick?.Stop();
                 _canvas.Children.Clear();
                 _pointers.Clear();
             }
 
             public void Close()
             {
-                try { _tick.Stop(); _win.Close(); } catch (Exception) { }
+                try { _tick.Stop(); _replayTick?.Stop(); _win.Close(); } catch (Exception) { }
             }
         }
     }

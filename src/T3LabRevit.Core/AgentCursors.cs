@@ -11,7 +11,7 @@ using static T3LabRevit.Core.Sch;
 namespace T3LabRevit.Core
 {
     /// <summary>What kind of work a call does: picks the colour on the bar and on the model.</summary>
-    internal enum ActionKind { Read, Create, Modify, Delete, File, View }
+    internal enum ActionKind { Read, Create, Modify, Delete, File, View, Code }
 
     internal enum StepState { Running, Ok, Failed, Refused, Busy }
 
@@ -117,10 +117,10 @@ namespace T3LabRevit.Core
             if (Enabled && !CursorUi.HudVisible)
             {
                 Refresh(true);
-                return "T3Lab Agent Cursors: bar shown.";
+                return "T3Lab Agent Cursors: bar shown. Press Agent Cursors again to turn it off.";
             }
             SetEnabled(!Enabled);
-            return Enabled ? "T3Lab Agent Cursors: on." : "T3Lab Agent Cursors: off.";
+            return Enabled ? "T3Lab Agent Cursors: on. The bar shows what each AI app does." : "T3Lab Agent Cursors: off.";
         }
 
         public static void SetEnabled(bool on)
@@ -174,29 +174,14 @@ namespace T3LabRevit.Core
 
         // ---------------------------------------------------------------- agents
 
-        static readonly System.Windows.Media.Color[] Palette =
-        {
-            Rgb(0xD9, 0x77, 0x57), Rgb(0x0D, 0x99, 0xFF), Rgb(0x14, 0xAE, 0x5C), Rgb(0xA2, 0x59, 0xFF),
-            Rgb(0xE8, 0x46, 0x7C), Rgb(0x00, 0xB5, 0xCE), Rgb(0xFF, 0xC7, 0x00), Rgb(0xFF, 0x72, 0x62),
-        };
-
         internal static System.Windows.Media.Color Rgb(byte r, byte g, byte b) => System.Windows.Media.Color.FromRgb(r, g, b);
 
-        /// <summary>Display name and palette slot of an AI app from its MCP clientInfo.name.</summary>
-        static string Known(string rawName, out int slot)
-        {
-            string key = string.IsNullOrWhiteSpace(rawName) ? "ai" : rawName.Trim();
-            string lower = key.ToLowerInvariant();
-            if (lower.Contains("claude-code") || lower == "claude code") { slot = 0; return "Claude Code"; }
-            if (lower.Contains("claude")) { slot = 0; return "Claude"; }
-            if (lower.Contains("cursor")) { slot = 3; return "Cursor"; }
-            if (lower.Contains("codex") || lower.Contains("openai") || lower.Contains("chatgpt")) { slot = 2; return "ChatGPT"; }
-            if (lower.Contains("gemini") || lower.Contains("antigravity")) { slot = 1; return "Gemini"; }
-            if (lower.Contains("copilot") || lower.Contains("vscode") || lower.Contains("visual studio")) { slot = 5; return "Copilot"; }
-            if (lower.Contains("windsurf") || lower.Contains("cascade")) { slot = 4; return "Windsurf"; }
-            slot = key == "ai" ? 1 : (key.GetHashCode() & 0x7FFFFFFF) % Palette.Length;
-            return key == "ai" ? "AI" : key.Length > 16 ? key.Substring(0, 16) : key;
-        }
+        /// <summary>A T3Style colour (ARGB) as a WPF colour.</summary>
+        internal static System.Windows.Media.Color C(uint argb) =>
+            System.Windows.Media.Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
+
+        /// <summary>Display name and colour of an AI app (T3Style.Agent, shared with T3Lab CAD MCP).</summary>
+        static string Known(string rawName, out uint color) => T3Style.Agent(rawName, out color);
 
         /// <summary>
         /// One agent per chat: the key is "name#session" (the bridge's process id). A second chat of the same app is
@@ -206,8 +191,8 @@ namespace T3LabRevit.Core
         {
             string key = string.IsNullOrWhiteSpace(clientKey) ? "ai" : clientKey.Trim();
             if (Agents.TryGetValue(key, out AgentInfo known)) return known;
-            string name = Known(BaseName(key), out int slot);
-            List<AgentInfo> same = Agents.Values.Where(a => Known(BaseName(a.Key), out int unused) == name).ToList();
+            string name = Known(BaseName(key), out uint color);
+            List<AgentInfo> same = Agents.Values.Where(a => Known(BaseName(a.Key), out uint unused) == name).ToList();
             // a new chat inherits the name and colour of a chat of the same app that went quiet (bridges restart: names must
             // not climb to "7"); it starts with an empty plan, and the quiet one is retired, never shared by two live chats
             AgentInfo quiet = same.FirstOrDefault(a => a.Current == null && (DateTime.Now - a.LastSeen).TotalMinutes > QuietMinutes);
@@ -223,7 +208,7 @@ namespace T3LabRevit.Core
                 int n = 1;
                 string label = name;
                 while (same.Any(a => a.Name == label)) label = name + " " + ++n;
-                info = new AgentInfo { Key = key, Name = label, Color = Palette[(slot + (n - 1) * 3) % Palette.Length] };
+                info = new AgentInfo { Key = key, Name = label, Color = C(n == 1 ? color : T3Style.Extra(name, n)) };
             }
             Agents[key] = info;
             return info;
@@ -243,7 +228,7 @@ namespace T3LabRevit.Core
         }
 
         /// <summary>Who an agent is, for messages (no registration): "Claude Code".</summary>
-        public static string Label(string clientKey) => Known(BaseName(clientKey ?? "ai"), out int unused);
+        public static string Label(string clientKey) => Known(BaseName(clientKey ?? "ai"), out uint unused);
 
         /// <summary>"claude-code#4812" from the bridge's client {name, version, session}.</summary>
         public static string ClientKey(object raw)
@@ -494,7 +479,7 @@ namespace T3LabRevit.Core
             ["place_line_based"] = ActionKind.Create, ["transfer_elements"] = ActionKind.Create, ["tag_all_in_view"] = ActionKind.Create,
             ["create_view_filter"] = ActionKind.Create, ["create_project_parameter"] = ActionKind.Create,
             ["manage_links"] = ActionKind.File, ["schedule_roundtrip"] = ActionKind.File, ["export_room_data"] = ActionKind.Read,
-            ["manage_document"] = ActionKind.File, ["export_documents"] = ActionKind.File,
+            ["manage_document"] = ActionKind.File, ["export_documents"] = ActionKind.File, ["send_code_to_revit"] = ActionKind.Code,
             ["set_active_view"] = ActionKind.View, ["set_selection"] = ActionKind.View, ["export_image"] = ActionKind.View,
         };
 
@@ -624,7 +609,7 @@ namespace T3LabRevit.Core
         {
             public List<AgentView> Agents = new List<AgentView>();
             public List<StepView> Feed = new List<StepView>();
-            public bool Paused, ShowOnModel, Follow;
+            public bool Paused, ShowOnModel, Follow, Dark;
             public int Touched;
         }
 
@@ -635,7 +620,7 @@ namespace T3LabRevit.Core
                 string active = Entry.ActiveDocument ?? "";
                 var v = new View
                 {
-                    Paused = Paused, ShowOnModel = ShowOnModel, Follow = Follow,
+                    Paused = Paused, ShowOnModel = ShowOnModel, Follow = Follow, Dark = Entry.DarkTheme,
                     Touched = Touched.TryGetValue(active, out HashSet<long> set) ? set.Count : 0,
                 };
                 foreach (AgentInfo a in AllAgents().OrderByDescending(x => x.LastSeen))
@@ -657,7 +642,7 @@ namespace T3LabRevit.Core
                     v.Feed.Add(new StepView
                     {
                         Agent = a?.Name ?? Label(s.Agent),
-                        Color = a?.Color ?? Rgb(0x88, 0x88, 0x88),
+                        Color = a?.Color ?? C(T3Style.Action("Read")),
                         Caption = s.Caption, Error = s.Error, Action = s.Action, State = s.State, Seconds = s.Seconds,
                         When = s.Started.AddSeconds(s.Seconds), Changed = s.Changed,
                     });
@@ -692,16 +677,6 @@ namespace T3LabRevit.Core
             }
         }
 
-        /// <summary>"now", "12 s ago", "3 min ago", "14:05".</summary>
-        internal static string Ago(DateTime when)
-        {
-            double s = (DateTime.Now - when).TotalSeconds;
-            if (s < 5) return "now";
-            if (s < 60) return (int)s + " s ago";
-            if (s < 3600) return (int)(s / 60) + " min ago";
-            return when.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
-        }
-
         static void Refresh(bool reveal)
         {
             if (!Enabled) return;
@@ -711,22 +686,75 @@ namespace T3LabRevit.Core
 
         // ---------------------------------------------------------------- on the model (main thread)
 
-        /// <summary>Screen rectangles (physical px) of what a step touched, in every open view of the active model, then the cursor glides there.</summary>
+        /// <summary>After a call: Follow zooms Revit to it, then the cursor glides there and frames what it touched.</summary>
         static void ShowOnModelNow(UIApplication app, AgentInfo agent, AgentStep step)
         {
             try
             {
                 UIDocument uidoc = app.ActiveUIDocument;
-                if (uidoc == null || !string.Equals(uidoc.Document.Title, step.Document, StringComparison.OrdinalIgnoreCase)) return;
-                Document doc = uidoc.Document;
-                List<long> ids;
-                lock (Gate) ids = step.Created.Concat(step.Modified).Concat(step.Named).Distinct().ToList();
-                var elements = ids.Select(i => doc.GetElement(Id.Make(i))).Where(e => e != null).Take(MaxCapture).ToList();
-                if (Follow && IsChange(step) && elements.Count > 0)
+                if (Follow && IsChange(step) && uidoc != null && string.Equals(uidoc.Document.Title, step.Document, StringComparison.OrdinalIgnoreCase))
                 {
-                    try { uidoc.ShowElements(elements.Select(e => e.Id).ToList()); }
+                    List<ElementId> ids = ElementsOf(uidoc.Document, step).Select(e => e.Id).ToList();
+                    try { if (ids.Count > 0) uidoc.ShowElements(ids); }
                     catch (Exception) { /* not shown in any view */ }
                 }
+                CursorUi.Frame frame = BuildFrame(app, agent, step);
+                if (frame != null) CursorUi.ShowFrame(frame);
+            }
+            catch (Exception ex) { Log.Error("agent cursors overlay: " + ex.Message); }
+        }
+
+        /// <summary>Bar button Replay: the last changes in this model, oldest first, shown again one by one (main thread).</summary>
+        public static void Replay()
+        {
+            Entry.Main?.Post(app =>
+            {
+                try
+                {
+                    UIDocument uidoc = app.ActiveUIDocument;
+                    if (uidoc == null) { CursorUi.Toast("Open a model to replay what the AI changed in it."); return; }
+                    string title = uidoc.Document.Title;
+                    List<KeyValuePair<AgentInfo, AgentStep>> steps;
+                    lock (Gate)
+                        steps = Feed.Where(s => s.State == StepState.Ok && IsChange(s) && string.Equals(s.Document, title, StringComparison.OrdinalIgnoreCase))
+                            .Reverse().Select(s => new KeyValuePair<AgentInfo, AgentStep>(Find(s.Agent), s)).Where(kv => kv.Key != null).ToList();
+                    List<CursorUi.Frame> frames = steps.Select(kv => BuildFrame(app, kv.Key, kv.Value))
+                        .Where(f => f != null && (f.Boxes.Count > 0 || f.Path.Count > 0)).ToList();
+                    if (frames.Count == 0) { CursorUi.Toast("No change to replay in this model."); return; }
+                    CursorUi.Replay(frames);
+                }
+                catch (Exception ex) { Log.Error("agent cursors replay: " + ex.Message); }
+            });
+        }
+
+        static AgentInfo Find(string key)
+        {
+            lock (Gate) return Agents.TryGetValue(key, out AgentInfo a) ? a : Retired.TryGetValue(key, out AgentInfo r) ? r : null;
+        }
+
+        static List<Element> ElementsOf(Document doc, AgentStep step)
+        {
+            List<long> ids;
+            lock (Gate) ids = step.Created.Concat(step.Modified).Concat(step.Named).Distinct().ToList();
+            return ids.Select(i => doc.GetElement(Id.Make(i))).Where(e => e != null).Take(MaxCapture).ToList();
+        }
+
+        /// <summary>
+        /// Screen rectangles (physical px) of what a step touched, in every open view of the active model, coloured like the
+        /// bar (created, changed, deleted, read: T3Style), plus the draw-along path. Null when the step's model is not active.
+        /// </summary>
+        static CursorUi.Frame BuildFrame(UIApplication app, AgentInfo agent, AgentStep step)
+        {
+            try
+            {
+                UIDocument uidoc = app.ActiveUIDocument;
+                if (uidoc == null || !string.Equals(uidoc.Document.Title, step.Document, StringComparison.OrdinalIgnoreCase)) return null;
+                Document doc = uidoc.Document;
+                List<Element> elements = ElementsOf(doc, step);
+                HashSet<long> created;
+                lock (Gate) created = new HashSet<long>(step.Created);
+                var made = CursorUi.ToMedia(T3Style.Action("Create"));
+                var changed = CursorUi.ToMedia(T3Style.Action(IsChange(step) ? "Modify" : "Read"));
                 var frame = new CursorUi.Frame
                 {
                     Agent = agent.Name, Color = agent.Color, Caption = step.Caption, Action = step.Action,
@@ -750,20 +778,28 @@ namespace T3LabRevit.Core
                         long key = Id.V(e.Id);
                         if (!labels.TryGetValue(key, out string label)) labels[key] = label = Subject(e);
                         CursorUi.Box r = p.Project(b, label, false);
-                        if (r != null) frame.Boxes.Add(r);
+                        if (r == null) continue;
+                        r.Color = created.Contains(key) ? made : changed;
+                        frame.Boxes.Add(r);
                     }
                     foreach (BoundingBoxXYZ b in step.DeletedBoxes.Take(MaxBoxes))
                     {
                         CursorUi.Box r = p.Project(b, "deleted", true);
-                        if (r != null) frame.Boxes.Add(r);
+                        if (r == null) continue;
+                        r.Color = CursorUi.ToMedia(T3Style.Action("Delete"));
+                        frame.Boxes.Add(r);
                     }
                     // draw-along: in the active view the cursor follows each new wall, grid, beam or line from start to end
                     if (step.Action == ActionKind.Create && step.State == StepState.Ok && view.Id == doc.ActiveView?.Id)
                         AddPath(frame, p, elements, step);
                 }
-                CursorUi.ShowFrame(frame);
+                return frame;
             }
-            catch (Exception ex) { Log.Error("agent cursors overlay: " + ex.Message); }
+            catch (Exception ex)
+            {
+                Log.Error("agent cursors frame: " + ex.Message);
+                return null;
+            }
         }
 
         static void AddPath(CursorUi.Frame frame, Projector p, List<Element> elements, AgentStep step)

@@ -27,4 +27,8 @@ Rules:
   `dotnet run --project tests/conductor_test` (the queue's ordering, deadline and one-holder rule, no Revit needed).
 - Error results an agent acts on are JSON `{error_code, message, retryable, nothing_ran, hint}` (add-in: `revit_busy`,
   `paused_by_user`; bridge: `tier_denied`, `tool_denied`, `revit_not_running`, `timeout`, `bridge_error`). Keep the codes stable.
+- Shared with [T3Lab CAD MCP](https://github.com/thanhtranarch/t3lab_mcp-cad), the same file but for the namespace:
+  `Core/Conductor.cs`, `Core/T3Style.cs` (bar palettes, action / agent colours, every word on the Agent Cursors bar) and
+  `Loader/T3Icons.cs` (ribbon icons, T3 Space Line of t3lab-revit-api). The ribbon (buttons, order, tooltips), the bar
+  layout and the Status lines match too. Change both repos together.
 - Nothing here is verified inside Revit by CI. Say "NEEDS VERIFICATION in Revit" for behaviour you could not run.

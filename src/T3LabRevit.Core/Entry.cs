@@ -26,6 +26,8 @@ namespace T3LabRevit.Core
         internal static string RevitVersion { get; private set; } = "";
         internal static IntPtr MainWindow { get; private set; }
         internal static volatile string ActiveDocument = "";
+        /// <summary>Revit's UI theme, read on the main thread (the Agent Cursors bar follows it; its thread must not call the API).</summary>
+        internal static volatile bool DarkTheme;
         internal static volatile string LastCall = "";
         internal static long CallCount;
 
@@ -57,6 +59,7 @@ namespace T3LabRevit.Core
                 ActiveDocument = _uia.ActiveUIDocument?.Document?.Title ?? "";
             }
 
+            ReadTheme();
             Registry.Build();
             Main = new MainThread();
             var server = new Server(Rpc.Handle);
@@ -88,9 +91,10 @@ namespace T3LabRevit.Core
 
         public static bool Running => _server != null;
 
+        /// <summary>Same lines as T3Lab CAD MCP's Status.</summary>
         public static string Status()
         {
-            if (_server == null) return $"T3Lab Revit MCP v{Version}: stopped.";
+            if (_server == null) return $"T3Lab Revit MCP v{Version}: stopped (Start / Stop on the Add-Ins tab starts it).";
             string last = string.IsNullOrEmpty(LastCall) ? "none" : LastCall;
             var q = Queue.Status();
             string queue = (bool)q["busy"] ? $"busy ({q["tool"]}), {q["waiting"]} waiting" : "free";
@@ -161,6 +165,18 @@ namespace T3LabRevit.Core
         static void OnViewActivated(object sender, ViewActivatedEventArgs e)
         {
             ActiveDocument = e.Document?.Title ?? "";
+            ReadTheme();
+        }
+
+        /// <summary>Main thread only. Revit 2024+ has a dark theme; before, the bar is light.</summary>
+        static void ReadTheme()
+        {
+#if REVIT2024_OR_GREATER
+            try { DarkTheme = UIThemeManager.CurrentTheme == UITheme.Dark; }
+            catch (Exception) { DarkTheme = false; }
+#else
+            DarkTheme = false;
+#endif
         }
 
         static void OnDocumentClosing(object sender, DocumentClosingEventArgs e)

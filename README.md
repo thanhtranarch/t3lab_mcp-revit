@@ -67,26 +67,31 @@ Tuỳ chọn: `-Clients claude-desktop,claude-code` (chỉ vài app) · `-Years 
 
 ## Ribbon: Add-Ins › T3Lab MCP
 
-Add-in không tạo tab riêng: các nút nằm trong panel **T3Lab MCP** của tab **Add-Ins** có sẵn trong Revit.
+Add-in không tạo tab riêng: các nút nằm trong panel **T3Lab MCP** của tab **Add-Ins** có sẵn trong Revit. Cùng nút,
+thứ tự, icon (T3 Space Line của t3lab-revit-api, theo theme sáng / tối của Revit 2024+) và câu chữ với
+[T3Lab CAD MCP](https://github.com/thanhtranarch/t3lab_mcp-cad) trên tab Add-ins của AutoCAD.
 
 | Nút | Việc |
 |---|---|
 | **Start / Stop** | Bật/tắt server MCP (tắt thì lần mở Revit sau cũng không tự chạy, tới khi bấm Start) |
-| **Agent Cursors** | Bật/tắt thanh theo dõi AI |
-| **Connect AI** | Thêm Revit vào mọi AI app trên máy (chạy `install.ps1 -ConnectOnly`) |
-| **Status** · **Reload** | Port, số lần gọi, hàng đợi, thư mục log · nạp lại `T3LabRevit.Core.dll` sau khi cập nhật, không cần restart Revit |
+| **Agent Cursors** | Bật/tắt thanh theo dõi AI (server đang tắt thì bật luôn server) |
+| **Connect AI** | Thêm Revit vào mọi AI app trên máy, hoặc chỉ kiểm tra (chạy `install.ps1 -ConnectOnly` / `-Check`) |
+| **Status** · **Reload** | Port, tool, số lần gọi, hàng đợi, Agent Cursors, log · nạp lại `T3LabRevit.Core.dll` sau khi cập nhật, không cần restart Revit |
 
 ## Agent Cursors
 
-- **Thanh (bar)**: mỗi AI app một dòng màu — trạng thái, mục tiêu và danh sách bước (AI gọi `t3lab_narrate`), việc đang
-  chạy, 6 bước gần nhất (ok / failed / paused / not run, số element thay đổi). Trạng thái:
+- **Thanh (bar)**: giống hệt bảng của T3Lab CAD MCP (cùng bố cục, chữ, màu; sáng / tối theo theme Revit). Mỗi AI app:
+  con trỏ màu, tên, trạng thái, số lần gọi · số thay đổi, mục tiêu, kế hoạch *Step 2/5* + thanh tiến độ + ✓ ▸ ○ (AI gọi
+  `t3lab_narrate`), dải màu của việc đang chạy; rồi **RECENT**: 6 bước gần nhất (✓ ⏸ – ✕, "Claude · 12 s ago", số thay
+  đổi · giây hoặc lỗi). Trạng thái:
   *In line · 1 ahead* (đang xếp hàng sau AI khác, dải vàng ghi "after Claude Code") · *Waiting for Revit* (tới lượt nhưng
   Revit đang bận dialog / edit mode) · *Working 8 s* · *Thinking ···* (vừa xong một bước, đang chờ model, 20 s) ·
   *Idle · last step 3 min ago*.
 - **Mỗi chat một agent**: hai cửa sổ Claude Code là "Claude Code" và "Claude Code 2", hai màu, hai con trỏ.
-- **Pause**: mọi tool thay đổi model hoặc ghi file bị từ chối tới khi bấm Resume; tool đọc vẫn chạy.
-- **Show on the model**: con trỏ của từng AI lướt tới element nó đọc/tạo/sửa trên mọi view đang mở, khung màu theo
-  loại việc (xanh lá = tạo, cam = sửa, đỏ đứt nét = xoá); **Follow** zoom Revit theo AI.
+- **Nút** (cùng thứ tự với AutoCAD): **Pause / Resume** (mọi tool thay đổi model hoặc ghi file bị từ chối; tool đọc vẫn
+  chạy) · **Select changes** · **Replay** (chiếu lại các thay đổi gần nhất trong model, từng bước, với con trỏ) · **Clear**.
+- **Show on model** (mặc định bật): con trỏ của từng AI lướt tới element nó đọc/tạo/sửa trên mọi view đang mở, khung màu
+  theo loại việc (xanh lá = tạo, xanh dương = sửa, đỏ đứt nét = xoá, xám = đọc); **Follow** zoom Revit theo AI.
   - Tag con trỏ nền pastel + chữ đậm màu (dễ đọc trên view trắng), ghi **thứ vừa làm**: "Claude · Wall 3450 × 200",
     "Door 0915 x 2134mm", "Wall ×3"; trong lúc chạy ghi việc đang làm, giữa hai bước ghi "thinking ···".
   - **Vẽ theo (draw-along)**: tường, trục, dầm, line mới tạo → con trỏ chạy dọc từ đầu tới cuối từng cái trên view
